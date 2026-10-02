@@ -89,6 +89,21 @@ pub const PRESETS: &[Preset] = &[
         ],
     },
     Preset {
+        id: "food",
+        name: "Food Delivery",
+        description: "Food and grocery delivery apps and sites",
+        sites: &[
+            "ubereats.com", "doordash.com", "grubhub.com", "seamless.com", "postmates.com", "gopuff.com",
+            "instacart.com", "deliveroo.co.uk", "deliveroo.fr", "deliveroo.it", "deliveroo.be", "deliveroo.ie",
+            "just-eat.co.uk", "just-eat.com", "lieferando.de", "thuisbezorgd.nl", "takeaway.com", "wolt.com",
+            "glovoapp.com", "foodpanda.com", "talabat.com", "swiggy.com", "zomato.com", "rappi.com",
+            "ifood.com.br", "menulog.com.au", "skipthedishes.com", "getir.com", "yemeksepeti.com",
+            "tgoyemek.com",
+        ],
+        community: &[],
+        apps: &[],
+    },
+    Preset {
         id: "gambling",
         name: "Gambling",
         description: "Sports betting, online casinos, poker and crypto gambling sites",
