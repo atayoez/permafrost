@@ -8,9 +8,6 @@ pub struct Preset {
     pub description: &'static str,
     pub sites: &'static [&'static str],
     pub apps: &'static [&'static str],
-    /// Community blocklists (see `community::SOURCES`) to include.
-    pub community: &'static [&'static str],
-    pub safe_search: bool,
 }
 
 impl Preset {
@@ -20,8 +17,6 @@ impl Preset {
             name: self.name.to_owned(),
             sites: self.sites.iter().map(|s| (*s).to_owned()).collect(),
             apps: self.apps.iter().map(|a| (*a).to_owned()).collect(),
-            community: self.community.iter().map(|c| (*c).to_owned()).collect(),
-            safe_search: self.safe_search,
         }
     }
 
@@ -37,12 +32,6 @@ impl Preset {
                 list.apps.push((*app).to_owned());
             }
         }
-        for source in self.community {
-            if !list.community.iter().any(|c| c == source) {
-                list.community.push((*source).to_owned());
-            }
-        }
-        list.safe_search |= self.safe_search;
     }
 }
 
@@ -61,8 +50,6 @@ pub const PRESETS: &[Preset] = &[
             "bsky.app", "tumblr.com", "mastodon.social",
         ],
         apps: &[],
-        community: &[],
-        safe_search: false,
     },
     Preset {
         id: "video",
@@ -73,8 +60,6 @@ pub const PRESETS: &[Preset] = &[
             "disneyplus.com", "hulu.com", "max.com", "vimeo.com", "dailymotion.com", "kick.com",
         ],
         apps: &[],
-        community: &[],
-        safe_search: false,
     },
     Preset {
         id: "news",
@@ -85,8 +70,6 @@ pub const PRESETS: &[Preset] = &[
             "foxnews.com", "reuters.com", "washingtonpost.com", "news.ycombinator.com", "apnews.com",
         ],
         apps: &[],
-        community: &[],
-        safe_search: false,
     },
     Preset {
         id: "shopping",
@@ -97,8 +80,6 @@ pub const PRESETS: &[Preset] = &[
             "shein.com", "wish.com",
         ],
         apps: &[],
-        community: &[],
-        safe_search: false,
     },
     Preset {
         id: "games",
@@ -112,8 +93,6 @@ pub const PRESETS: &[Preset] = &[
             "com.valvesoftware.Steam", "steam", "com.heroicgameslauncher.hgl", "net.lutris.Lutris",
             "org.prismlauncher.PrismLauncher", "com.usebottles.bottles",
         ],
-        community: &[],
-        safe_search: false,
     },
     Preset {
         id: "gambling",
@@ -130,13 +109,11 @@ pub const PRESETS: &[Preset] = &[
             "pulsz.com", "nesine.com", "bilyoner.com", "misli.com", "iddaa.com", "tuttur.com",
         ],
         apps: &[],
-        community: &["stevenblack-gambling"],
-        safe_search: false,
     },
     Preset {
         id: "adult",
         name: "Adult Content",
-        description: "Major adult sites, and forces SafeSearch on Google, Bing, DuckDuckGo and YouTube",
+        description: "Major adult sites",
         sites: &[
             "pornhub.com", "xvideos.com", "xnxx.com", "xhamster.com", "xhamsterlive.com",
             "redtube.com", "youporn.com", "tube8.com", "spankbang.com", "eporner.com", "beeg.com",
@@ -147,8 +124,6 @@ pub const PRESETS: &[Preset] = &[
             "nhentai.net", "hanime.tv", "literotica.com",
         ],
         apps: &[],
-        community: &["stevenblack-porn"],
-        safe_search: true,
     },
 ];
 
@@ -161,15 +136,6 @@ mod tests {
         for preset in PRESETS {
             for site in preset.sites {
                 assert_eq!(crate::domain::normalize(site).as_deref(), Some(*site), "{} in {}", site, preset.id);
-            }
-        }
-    }
-
-    #[test]
-    fn community_sources_exist() {
-        for preset in PRESETS {
-            for source in preset.community {
-                assert!(crate::community::find(source).is_some(), "{source} in {}", preset.id);
             }
         }
     }

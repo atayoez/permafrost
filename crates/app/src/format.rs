@@ -1,7 +1,7 @@
 //! Turning times and durations into text.
 
 use chrono::{Local, TimeZone};
-use permafrost_common::model::{BlockList, Schedule, Status};
+use permafrost_common::model::{BlockList, Schedule};
 
 /// `47:12`, or `1:02:03` past an hour.
 pub fn countdown(seconds: i64) -> String {
@@ -70,13 +70,8 @@ pub fn thousands(n: usize) -> String {
     out
 }
 
-/// Sites a list blocks, counting its community lists once they're downloaded.
-pub fn site_count(list: &BlockList, status: &Status) -> usize {
-    list.sites.len() + list.community.iter().filter_map(|c| status.community_sizes.get(c)).sum::<usize>()
-}
-
-pub fn list_summary(list: &BlockList, status: &Status) -> String {
-    counts(site_count(list, status), list.apps.len())
+pub fn list_summary(list: &BlockList) -> String {
+    counts(list.sites.len(), list.apps.len())
 }
 
 fn counts(sites: usize, apps: usize) -> String {

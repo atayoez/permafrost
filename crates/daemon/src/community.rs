@@ -1,16 +1,17 @@
 //! Downloads community blocklists and keeps them fresh.
 //!
-//! Lists live in `<state dir>/community/<id>.txt`, one hostname per line, so a
-//! freeze keeps working offline with the last good copy.
+//! Each enabled list is downloaded once every time the service starts, and as
+//! soon as it's turned on. Lists live in `<state dir>/community/<id>.txt`, one
+//! hostname per line, so blocking keeps working offline with the last good copy.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use permafrost_common::community::{self, Source};
 
-const REFRESH: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+/// How long to wait before retrying a list that has never downloaded.
 const RETRY: Duration = Duration::from_secs(60 * 60);
 const MAX_DOWNLOAD: u64 = 32 * 1024 * 1024;
 /// A real list has thousands of entries; fewer means a broken download.
@@ -22,6 +23,8 @@ pub struct Community {
     dir: PathBuf,
     lists: HashMap<String, Vec<String>>,
     attempted: HashMap<String, Instant>,
+    /// Lists that are up to date for this run of the service.
+    fresh: HashSet<String>,
     /// Bumped whenever a list changes, so the hosts file gets rewritten.
     generation: u64,
     tx: mpsc::Sender<Download>,
@@ -37,7 +40,7 @@ impl Community {
                 lists.insert(source.id.to_owned(), text.lines().map(str::to_owned).collect());
             }
         }
-        Self { dir, lists, attempted: HashMap::new(), generation: 0, tx, rx }
+        Self { dir, lists, attempted: HashMap::new(), fresh: HashSet::new(), generation: 0, tx, rx }
     }
 
     pub fn generation(&self) -> u64 {
@@ -63,18 +66,25 @@ impl Community {
                     if let Err(e) = self.store(&id, &hosts) {
                         tracing::warn!("couldn't save community list {id}: {e}");
                     }
-                    self.lists.insert(id, hosts);
+                    self.lists.insert(id.clone(), hosts);
+                    self.fresh.insert(id);
                     self.generation += 1;
                     changed = true;
                 }
-                Err(e) => tracing::warn!("couldn't download community list {id}: {e}"),
+                Err(e) => {
+                    tracing::warn!("couldn't download community list {id}: {e}");
+                    // With a saved copy, wait for the next start rather than retrying.
+                    if self.lists.contains_key(&id) {
+                        self.fresh.insert(id);
+                    }
+                }
             }
         }
 
         for id in wanted {
             let Some(source) = community::find(id) else { continue };
             let recently_tried = self.attempted.get(id).is_some_and(|t| t.elapsed() < RETRY);
-            if recently_tried || (self.lists.contains_key(id) && !self.is_stale(id)) {
+            if recently_tried || self.fresh.contains(id) {
                 continue;
             }
             self.attempted.insert(id.clone(), Instant::now());
@@ -88,13 +98,6 @@ impl Community {
 
     fn path(&self, id: &str) -> PathBuf {
         self.dir.join(format!("{id}.txt"))
-    }
-
-    fn is_stale(&self, id: &str) -> bool {
-        std::fs::metadata(self.path(id))
-            .and_then(|m| m.modified())
-            .map(|modified| SystemTime::now().duration_since(modified).unwrap_or_default() > REFRESH)
-            .unwrap_or(true)
     }
 
     fn store(&self, id: &str, hosts: &[String]) -> std::io::Result<()> {
@@ -115,7 +118,7 @@ fn download(source: &Source) -> Result<Vec<String>, String> {
         .limit(MAX_DOWNLOAD)
         .read_to_string()
         .map_err(|e| e.to_string())?;
-    let hosts = community::parse_hosts(&text);
+    let hosts = community::parse(&text);
     if hosts.len() < MIN_ENTRIES {
         return Err(format!("only {} entries, keeping the previous copy", hosts.len()));
     }

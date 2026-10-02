@@ -1,0 +1,17 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PermafrostFiltersPage: Adw.Bin {
+  child: Adw.PreferencesPage page {
+    description: _("Filters are always on, not only during a freeze. While something is frozen they can be turned on, but not off.");
+
+    Adw.PreferencesGroup {
+      title: _("Search");
+
+      Adw.SwitchRow safe_search_row {
+        title: _("Force SafeSearch");
+        subtitle: _("Filters explicit results on Google, Bing, DuckDuckGo and YouTube");
+      }
+    }
+  };
+}

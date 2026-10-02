@@ -24,6 +24,9 @@ pub trait Permafrost {
 
     fn delete_schedule(&self, id: &str) -> zbus::Result<()>;
 
+    /// Replaces the always-on `Filters` (JSON).
+    fn set_filters(&self, filters: &str) -> zbus::Result<()>;
+
     fn start_freeze(&self, lists: &[&str], seconds: u64, locked: bool) -> zbus::Result<()>;
 
     fn add_time(&self, seconds: u64) -> zbus::Result<()>;

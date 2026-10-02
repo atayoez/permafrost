@@ -122,6 +122,11 @@ template $PermafrostWindow: Adw.ApplicationWindow {
             }
 
             StackPage {
+              name: "filters";
+              child: $PermafrostFiltersPage filters_page {};
+            }
+
+            StackPage {
               name: "schedules";
               child: $PermafrostSchedulesPage schedules_page {};
             }

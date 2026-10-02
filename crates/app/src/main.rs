@@ -2,6 +2,7 @@ mod app_picker;
 mod application;
 mod background;
 mod client;
+mod filters_page;
 mod format;
 mod freeze_page;
 mod list_page;

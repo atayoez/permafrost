@@ -10,6 +10,7 @@ use permafrost_common::presets::{self, Preset};
 
 use crate::client::Client;
 use crate::format;
+use crate::filters_page::FiltersPage;
 use crate::freeze_page::FreezePage;
 use crate::list_page::ListPage;
 use crate::schedules_page::SchedulesPage;
@@ -17,6 +18,8 @@ use crate::schedules_page::SchedulesPage;
 const APP_SYMBOLIC: &str = "io.github.atayoez.Permafrost-symbolic";
 const LIST_ICON: &str = "security-high-symbolic";
 
+/// Sidebar position of the first block list, after Freeze, Schedules and Filters.
+const FIRST_LIST_INDEX: u32 = 3;
 const REMIND_BEFORE_SCHEDULE: u32 = 5;
 const HOLD_BEFORE_SCHEDULE: u32 = 10;
 
@@ -47,6 +50,7 @@ pub enum Section {
     #[default]
     Freeze,
     Schedules,
+    Filters,
     List(String),
 }
 
@@ -77,6 +81,8 @@ mod imp {
         #[template_child]
         pub schedules_page: TemplateChild<SchedulesPage>,
         #[template_child]
+        pub filters_page: TemplateChild<FiltersPage>,
+        #[template_child]
         pub list_page: TemplateChild<ListPage>,
 
         pub client: RefCell<Option<Client>>,
@@ -104,6 +110,7 @@ mod imp {
         fn class_init(klass: &mut Self::Class) {
             FreezePage::ensure_type();
             SchedulesPage::ensure_type();
+            FiltersPage::ensure_type();
             ListPage::ensure_type();
             klass.bind_template();
 
@@ -198,6 +205,7 @@ impl Window {
                 move || {
                     match std::env::var("PERMAFROST_SECTION").as_deref() {
                         Ok("schedules") => win.show_section(Section::Schedules),
+                        Ok("filters") => win.show_section(Section::Filters),
                         Ok(s) if s.starts_with("list:") => win.show_section(Section::List(s[5..].to_owned())),
                         _ => {}
                     }
@@ -324,6 +332,7 @@ impl Window {
 
         imp.freeze_page.set_status(&status);
         imp.schedules_page.set_status(&status);
+        imp.filters_page.set_status(&status);
 
         let section = imp.section.borrow().clone();
         match section {
@@ -335,7 +344,7 @@ impl Window {
                 None => self.show_section(Section::Freeze),
             },
             Section::Freeze => self.update_freeze_title(&status),
-            Section::Schedules => {}
+            Section::Schedules | Section::Filters => {}
         }
 
         match status.locked_until {
@@ -457,7 +466,7 @@ impl Window {
             self.rebuild_new_list_menu(status);
         }
         for (label, list) in imp.count_labels.borrow().iter().zip(&status.state.lists) {
-            label.set_label(&format::thousands(format::site_count(list, status) + list.apps.len()));
+            label.set_label(&format::thousands(list.sites.len() + list.apps.len()));
         }
     }
 
@@ -470,6 +479,12 @@ impl Window {
         let top = adw::SidebarSection::new();
         top.append(adw::SidebarItem::builder().title("Freeze").icon_name(APP_SYMBOLIC).suffix(&freeze_suffix).build());
         top.append(adw::SidebarItem::builder().title("Schedules").icon_name("alarm-symbolic").build());
+        top.append(
+            adw::SidebarItem::builder()
+                .title("Filters")
+                .icon_name("preferences-system-parental-controls-symbolic")
+                .build(),
+        );
         imp.sidebar.append(top);
 
         let section = adw::SidebarSection::new();
@@ -523,9 +538,14 @@ impl Window {
         match section {
             Section::Freeze => Some(0),
             Section::Schedules => Some(1),
-            Section::List(id) => {
-                self.imp().sidebar_lists.borrow().iter().position(|(l, _)| l == id).map(|i| i as u32 + 2)
-            }
+            Section::Filters => Some(2),
+            Section::List(id) => self
+                .imp()
+                .sidebar_lists
+                .borrow()
+                .iter()
+                .position(|(l, _)| l == id)
+                .map(|i| i as u32 + FIRST_LIST_INDEX),
         }
     }
 
@@ -537,7 +557,8 @@ impl Window {
         let section = match index {
             0 => Section::Freeze,
             1 => Section::Schedules,
-            i => match imp.sidebar_lists.borrow().get(i as usize - 2) {
+            2 => Section::Filters,
+            i => match imp.sidebar_lists.borrow().get((i - FIRST_LIST_INDEX) as usize) {
                 Some((id, _)) => Section::List(id.clone()),
                 None => return,
             },
@@ -559,6 +580,10 @@ impl Window {
             Section::Schedules => {
                 imp.stack.set_visible_child_name("schedules");
                 imp.content_page.set_title("Schedules");
+            }
+            Section::Filters => {
+                imp.stack.set_visible_child_name("filters");
+                imp.content_page.set_title("Filters");
             }
             Section::List(id) => {
                 let Some(list) = status.state.list(id) else { return };

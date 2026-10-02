@@ -3,6 +3,7 @@
   <gresource prefix="/io/github/atayoez/Permafrost">
     <file preprocess="xml-stripblanks">ui/window.ui</file>
     <file preprocess="xml-stripblanks">ui/freeze-page.ui</file>
+    <file preprocess="xml-stripblanks">ui/filters-page.ui</file>
     <file preprocess="xml-stripblanks">ui/list-page.ui</file>
     <file preprocess="xml-stripblanks">ui/schedules-page.ui</file>
     <file>style.css</file>

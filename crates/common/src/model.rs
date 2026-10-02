@@ -15,12 +15,17 @@ pub struct BlockList {
     /// Desktop app IDs without the `.desktop` suffix, e.g. `com.valvesoftware.Steam`.
     #[serde(default)]
     pub apps: Vec<String>,
-    /// Community blocklists (`community::SOURCES` ids) included in this list.
-    #[serde(default)]
-    pub community: Vec<String>,
-    /// Force SafeSearch on Google, Bing, DuckDuckGo and YouTube while active.
+}
+
+/// Always-on filters, set in one place rather than per block list.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Filters {
+    /// Force SafeSearch on Google, Bing, DuckDuckGo and YouTube.
     #[serde(default)]
     pub safe_search: bool,
+    /// Community blocklists (`community::SOURCES` ids) to block.
+    #[serde(default)]
+    pub community: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,6 +99,8 @@ pub struct State {
     pub schedules: Vec<Schedule>,
     #[serde(default)]
     pub freeze: Option<Freeze>,
+    #[serde(default)]
+    pub filters: Filters,
     /// Presets already added once, so deleting one doesn't bring it back.
     #[serde(default)]
     pub seeded_presets: Vec<String>,
@@ -191,9 +198,18 @@ impl Status {
         };
         let removed_site = old.sites.iter().any(|s| !new.sites.contains(s));
         let removed_app = old.apps.iter().any(|a| !new.apps.contains(a));
-        let removed_source = old.community.iter().any(|c| !new.community.contains(c));
-        if removed_site || removed_app || removed_source || (old.safe_search && !new.safe_search) {
+        if removed_site || removed_app {
             return Err(format!("“{}” is frozen: you can add to it, but not remove from it", old.name));
+        }
+        Ok(())
+    }
+
+    /// While anything is locked, filters can be turned on but not off.
+    pub fn check_filters_update(&self, new: &Filters) -> Result<(), String> {
+        let old = &self.state.filters;
+        let loosened = (old.safe_search && !new.safe_search) || old.community.iter().any(|c| !new.community.contains(c));
+        if loosened && !self.locked_lists.is_empty() {
+            return Err("Filters can’t be turned off while something is frozen".into());
         }
         Ok(())
     }
@@ -278,6 +294,18 @@ mod tests {
         state.lists.retain(|l| l.id != "gambling");
         assert!(!state.seed_presets(), "a deleted preset stays deleted");
         assert!(state.list("gambling").is_none());
+    }
+
+    #[test]
+    fn filters_only_get_stricter_while_locked() {
+        let mut state = frozen_state();
+        state.filters = Filters { safe_search: true, community: vec!["stevenblack-porn".into()] };
+        let status = state.status(10);
+        assert!(status.check_filters_update(&Filters { safe_search: true, community: vec![] }).is_err());
+        assert!(status.check_filters_update(&Filters { safe_search: false, community: vec!["stevenblack-porn".into()] }).is_err());
+        let stricter = Filters { safe_search: true, community: vec!["stevenblack-porn".into(), "hagezi-nsfw".into()] };
+        assert!(status.check_filters_update(&stricter).is_ok());
+        assert!(state.status(100).check_filters_update(&Filters::default()).is_ok(), "unlocked again");
     }
 
     #[test]
