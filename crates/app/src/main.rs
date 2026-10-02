@@ -4,6 +4,7 @@ mod background;
 mod client;
 mod filters_page;
 mod format;
+mod history_page;
 mod freeze_page;
 mod list_page;
 mod preview;

@@ -106,6 +106,38 @@ impl Schedule {
     }
 }
 
+/// What happened on one day.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DayStats {
+    /// Time with anything blocked, from freezes or schedules.
+    #[serde(default)]
+    pub focus_seconds: u64,
+    #[serde(default)]
+    pub freezes: u32,
+    #[serde(default)]
+    pub apps_closed: u32,
+}
+
+/// A day counts towards a streak with at least this much focus.
+pub const STREAK_SECONDS: u64 = 15 * 60;
+
+pub fn day_key(date: chrono::NaiveDate) -> String {
+    date.format("%Y-%m-%d").to_string()
+}
+
+/// Days in a row with enough focus, up to `today`. Today not counting yet
+/// doesn't break the streak.
+pub fn streak(history: &BTreeMap<String, DayStats>, today: chrono::NaiveDate) -> u32 {
+    let counts = |date| history.get(&day_key(date)).is_some_and(|d| d.focus_seconds >= STREAK_SECONDS);
+    let mut day = if counts(today) { today } else { today - chrono::Duration::days(1) };
+    let mut days = 0;
+    while counts(day) {
+        days += 1;
+        day -= chrono::Duration::days(1);
+    }
+    days
+}
+
 /// Pomodoro-style cycles: block for `work_minutes`, then lift for `break_minutes`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Breaks {
@@ -163,6 +195,9 @@ pub struct State {
     /// Whether preset lists have been given their community lists.
     #[serde(default)]
     pub community_seeded: bool,
+    /// Per local day (`YYYY-MM-DD`), most recent 90 days.
+    #[serde(default)]
+    pub history: BTreeMap<String, DayStats>,
 }
 
 /// What's in effect right now, as the service sees it.
@@ -397,6 +432,20 @@ mod tests {
         assert_eq!(s.active_until(&at(5, 0, 0)), Some(at(6, 0, 0)), "all of Monday");
         assert_eq!(s.active_until(&at(5, 23, 59)), Some(at(6, 0, 0)));
         assert_eq!(s.active_until(&at(6, 12, 0)), None, "Tuesday is off");
+    }
+
+    #[test]
+    fn streaks() {
+        let day = |d| NaiveDate::from_ymd_opt(2026, 10, d).unwrap();
+        let focused = DayStats { focus_seconds: STREAK_SECONDS, ..Default::default() };
+        let mut history = BTreeMap::new();
+        for d in [1, 2, 3, 5] {
+            history.insert(day_key(day(d)), focused.clone());
+        }
+        assert_eq!(streak(&history, day(3)), 3);
+        assert_eq!(streak(&history, day(4)), 3, "today hasn't counted yet");
+        assert_eq!(streak(&history, day(5)), 1);
+        assert_eq!(streak(&history, day(7)), 0);
     }
 
     #[test]

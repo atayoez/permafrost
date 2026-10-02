@@ -11,6 +11,7 @@ use crate::client::Client;
 use crate::format;
 use crate::filters_page::FiltersPage;
 use crate::freeze_page::FreezePage;
+use crate::history_page::HistoryPage;
 use crate::list_page::ListPage;
 use crate::schedules_page::SchedulesPage;
 use crate::settings_page::SettingsPage;
@@ -46,7 +47,8 @@ fn index_of(section: &Section) -> u32 {
         Section::Freeze => 0,
         Section::Schedules => 1,
         Section::Filters | Section::List(_) => 2,
-        Section::Settings => 3,
+        Section::History => 3,
+        Section::Settings => 4,
     }
 }
 
@@ -57,6 +59,7 @@ pub enum Section {
     Freeze,
     Schedules,
     Filters,
+    History,
     Settings,
     List(String),
 }
@@ -93,6 +96,8 @@ mod imp {
         pub list_page: TemplateChild<ListPage>,
         #[template_child]
         pub settings_page: TemplateChild<SettingsPage>,
+        #[template_child]
+        pub history_page: TemplateChild<HistoryPage>,
 
         pub client: RefCell<Option<Client>>,
         pub status: RefCell<Option<Rc<Status>>>,
@@ -120,6 +125,7 @@ mod imp {
             SchedulesPage::ensure_type();
             FiltersPage::ensure_type();
             SettingsPage::ensure_type();
+            HistoryPage::ensure_type();
             ListPage::ensure_type();
             klass.bind_template();
 
@@ -214,6 +220,7 @@ impl Window {
                         Ok("filters") => win.show_section(Section::Filters),
                         Ok("custom") => win.imp().freeze_page.show_custom_duration(),
                         Ok("settings") => win.show_section(Section::Settings),
+                        Ok("history") => win.show_section(Section::History),
                         Ok(s) if s.starts_with("preview:") => {
                             if let Some(status) = win.status()
                                 && let Some(list) = status.state.list(&s[8..])
@@ -351,6 +358,7 @@ impl Window {
         imp.schedules_page.set_status(&status);
         imp.filters_page.set_status(&status);
         imp.settings_page.set_status(&status);
+        imp.history_page.set_status(&status);
 
         let section = imp.section.borrow().clone();
         match section {
@@ -362,7 +370,7 @@ impl Window {
                 None => self.show_section(Section::Filters),
             },
             Section::Freeze => self.update_freeze_title(&status),
-            Section::Schedules | Section::Filters | Section::Settings => {}
+            Section::Schedules | Section::Filters | Section::History | Section::Settings => {}
         }
 
         match status.locked_until {
@@ -519,6 +527,7 @@ impl Window {
                 .icon_name("preferences-system-parental-controls-symbolic")
                 .build(),
         );
+        section.append(adw::SidebarItem::builder().title("History").icon_name("document-open-recent-symbolic").build());
         section.append(adw::SidebarItem::builder().title("Settings").icon_name("emblem-system-symbolic").build());
         imp.sidebar.append(section);
         imp.freeze_suffix.replace(Some(freeze_suffix));
@@ -536,6 +545,7 @@ impl Window {
             0 => Section::Freeze,
             1 => Section::Schedules,
             2 => Section::Filters,
+            3 => Section::History,
             _ => Section::Settings,
         };
         self.show_section(section);
@@ -564,6 +574,10 @@ impl Window {
             Section::Filters => {
                 imp.stack.set_visible_child_name("filters");
                 imp.content_page.set_title("Filters");
+            }
+            Section::History => {
+                imp.stack.set_visible_child_name("history");
+                imp.content_page.set_title("History");
             }
             Section::Settings => {
                 imp.stack.set_visible_child_name("settings");

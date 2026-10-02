@@ -22,6 +22,16 @@ pub fn clock(timestamp: i64) -> String {
     }
 }
 
+/// `2 h 10 min`, `45 min`, `0 min`.
+pub fn duration(seconds: u64) -> String {
+    let minutes = seconds / 60;
+    match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} h"),
+        (h, m) => format!("{h} h {m} min"),
+    }
+}
+
 pub fn minutes_of_day(minutes: u16) -> String {
     format!("{:02}:{:02}", minutes / 60, minutes % 60)
 }
@@ -94,5 +104,8 @@ mod tests {
         assert_eq!(counts(5, 1), "5 sites · 1 app");
         assert_eq!(counts(76_828, 0), "76,828 sites");
         assert_eq!(thousands(999), "999");
+        assert_eq!(duration(130 * 60), "2 h 10 min");
+        assert_eq!(duration(45 * 60 + 59), "45 min");
+        assert_eq!(duration(7200), "2 h");
     }
 }

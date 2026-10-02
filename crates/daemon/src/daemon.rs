@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::Context;
 use nix::time::{ClockId, clock_gettime};
 use permafrost_common::community;
-use permafrost_common::model::{BlockList, Breaks, Freeze, Schedule, Settings, State, Status};
+use permafrost_common::model::{BlockList, Breaks, DayStats, Freeze, Schedule, Settings, State, Status, day_key};
 use permafrost_common::domain;
 
 use crate::apps::AppEnforcer;
@@ -61,6 +61,10 @@ pub struct Daemon {
     /// Whether browser DNS-over-HTTPS policies are currently in place.
     doh_blocked: Option<bool>,
     last_active: BTreeSet<String>,
+    /// Focus time below a second, carried to the next tick.
+    focus_carry_ms: u64,
+    /// When history was last saved; it's saved at most once a minute.
+    history_saved: std::time::Instant,
     /// Wall clock and boot clock at the last tick, to notice clock changes.
     last_clocks: Option<(i64, Duration)>,
 }
@@ -92,6 +96,8 @@ impl Daemon {
             doh_blocked: None,
             last_active: BTreeSet::new(),
             last_clocks: None,
+            history_saved: std::time::Instant::now(),
+            focus_carry_ms: 0,
             options,
         };
         if seeded {
@@ -224,6 +230,7 @@ impl Daemon {
             return Err(Error::Invalid("Breaks need 5 to 180 minutes of work and 1 to 60 minutes of rest".into()));
         }
         self.state.freeze = Some(Freeze { lists, started_at: now, ends_at: now + seconds as i64, locked, breaks });
+        self.today().freezes += 1;
         self.commit()
     }
 
@@ -249,8 +256,10 @@ impl Daemon {
     pub fn tick(&mut self) -> TickReport {
         let (wall, boot) = (now(), boottime());
         let mut changed = false;
+        let mut elapsed = Duration::ZERO;
         if let Some((last_wall, last_boot)) = self.last_clocks {
-            let real = boot.saturating_sub(last_boot).as_secs() as i64;
+            elapsed = boot.saturating_sub(last_boot);
+            let real = elapsed.as_secs() as i64;
             let jump = (wall - last_wall) - real;
             // Moving the clock shouldn't end a freeze early (or late).
             if jump.abs() > 5
@@ -269,6 +278,18 @@ impl Daemon {
 
         let status = self.status_at(wall);
         let closed_apps = self.enforce(&status);
+        if !status.active_lists.is_empty() {
+            // Ticks are 2 s apart; a longer gap means the computer was asleep.
+            let millis = self.focus_carry_ms + elapsed.as_millis().min(5000) as u64;
+            self.today().focus_seconds += millis / 1000;
+            self.focus_carry_ms = millis % 1000;
+        }
+        self.today().apps_closed += closed_apps.len() as u32;
+        let focusing = !status.active_lists.is_empty();
+        if !closed_apps.is_empty() || (focusing && self.history_saved.elapsed() >= Duration::from_secs(60)) {
+            self.history_saved = std::time::Instant::now();
+            changed = true;
+        }
         changed |= status.active_lists != self.last_active;
         self.last_active = status.active_lists.clone();
         if changed && let Err(e) = self.save() {
@@ -330,6 +351,14 @@ impl Daemon {
             return false;
         }
         true
+    }
+
+    /// Today's statistics, dropping days older than 90.
+    fn today(&mut self) -> &mut DayStats {
+        let today = chrono::Local::now().date_naive();
+        let oldest = day_key(today - chrono::Duration::days(90));
+        self.state.history.retain(|day, _| *day >= oldest);
+        self.state.history.entry(day_key(today)).or_default()
     }
 
     fn commit(&mut self) -> Result<()> {

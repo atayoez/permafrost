@@ -120,6 +120,11 @@ template $PermafrostWindow: Adw.ApplicationWindow {
             }
 
             StackPage {
+              name: "history";
+              child: $PermafrostHistoryPage history_page {};
+            }
+
+            StackPage {
               name: "settings";
               child: $PermafrostSettingsPage settings_page {};
             }
