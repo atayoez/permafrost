@@ -1,6 +1,7 @@
 //! permafrostd: keeps Permafrost's blocks in place, even when the app is closed.
 
 mod apps;
+mod browsers;
 mod community;
 mod daemon;
 mod hosts;

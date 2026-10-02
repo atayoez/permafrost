@@ -11,6 +11,7 @@ use permafrost_common::model::{BlockList, Freeze, Schedule, State, Status};
 use permafrost_common::domain;
 
 use crate::apps::AppEnforcer;
+use crate::browsers;
 use crate::community::Community;
 use crate::hosts;
 use crate::safesearch::SafeSearch;
@@ -56,6 +57,8 @@ pub struct Daemon {
     community: Community,
     /// What the hosts file was last written from, to skip rewriting it every tick.
     hosts_key: Option<HostsKey>,
+    /// Whether browser DNS-over-HTTPS policies are currently in place.
+    doh_blocked: Option<bool>,
     last_active: BTreeSet<String>,
     /// Wall clock and boot clock at the last tick, to notice clock changes.
     last_clocks: Option<(i64, Duration)>,
@@ -85,6 +88,7 @@ impl Daemon {
             safe_search: SafeSearch::default(),
             community: Community::new(options.state_file.with_file_name("community")),
             hosts_key: None,
+            doh_blocked: None,
             last_active: BTreeSet::new(),
             last_clocks: None,
             options,
@@ -256,6 +260,7 @@ impl Daemon {
         if self.status().locked_lists.is_empty() {
             self.write_hosts(String::new());
             self.hosts_key = None;
+            browsers::set_doh_blocked(false, self.options.dry_run);
         }
     }
 
@@ -277,9 +282,14 @@ impl Daemon {
                 .map(String::as_str)
                 .filter(|host| !sites.contains(*host))
                 .collect();
+            let blocking = !block_is_empty(&sites, &community);
             let block = hosts::render(&sites, &community, redirects);
             if self.write_hosts(block) {
                 self.hosts_key = Some(key);
+            }
+            if self.doh_blocked != Some(blocking) {
+                browsers::set_doh_blocked(blocking, self.options.dry_run);
+                self.doh_blocked = Some(blocking);
             }
         }
         self.apps.enforce(&apps, self.options.dry_run)
@@ -316,6 +326,10 @@ impl Daemon {
         std::fs::rename(&tmp, path)?;
         Ok(())
     }
+}
+
+fn block_is_empty(sites: &BTreeSet<String>, community: &BTreeSet<&str>) -> bool {
+    sites.is_empty() && community.is_empty()
 }
 
 /// A short, readable, unique id like `work-hours-k3j9`.

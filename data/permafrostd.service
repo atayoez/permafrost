@@ -9,9 +9,7 @@ ExecStart=/usr/libexec/permafrostd
 Restart=always
 RestartSec=2
 StateDirectory=permafrost
-# Needs /etc/hosts and the user cgroups; everything else stays read-only.
-ProtectSystem=full
-ReadWritePaths=/etc/hosts
+# Writes /etc/hosts and browser policies under /etc, and closes apps in the user cgroups.
 ProtectHome=read-only
 PrivateTmp=yes
 NoNewPrivileges=yes
