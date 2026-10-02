@@ -6,6 +6,7 @@ use adw::subclass::prelude::*;
 use futures_util::StreamExt;
 use gtk::{gio, glib};
 use permafrost_common::model::{BlockList, Status};
+use permafrost_common::presets::{self, Preset};
 
 use crate::client::Client;
 use crate::format;
@@ -43,6 +44,8 @@ mod imp {
         pub list_menu_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub banner: TemplateChild<adw::Banner>,
+        #[template_child]
+        pub new_list_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
         #[template_child]
@@ -85,6 +88,11 @@ mod imp {
                 }
             });
             klass.install_action("win.delete-list", None, |win, _, _| win.confirm_delete_list());
+            klass.install_action("win.add-preset-list", Some(glib::VariantTy::STRING), |win, _, param| {
+                if let Some(preset) = param.and_then(|p| p.get::<String>()).and_then(|id| presets::find(&id)) {
+                    win.add_preset_list(preset);
+                }
+            });
             klass.install_action("win.reconnect", None, |win, _, _| win.connect_service());
         }
 
@@ -387,6 +395,7 @@ impl Window {
         let lists: Vec<(String, String)> = status.state.lists.iter().map(|l| (l.id.clone(), l.name.clone())).collect();
         if *imp.sidebar_lists.borrow() != lists || imp.freeze_suffix.borrow().is_none() {
             self.rebuild_sidebar(&lists);
+            self.rebuild_new_list_menu(status);
         }
         for (label, list) in imp.count_labels.borrow().iter().zip(&status.state.lists) {
             label.set_label(&(list.sites.len() + list.apps.len()).to_string());
@@ -420,6 +429,35 @@ impl Window {
         let section = imp.section.borrow().clone();
         imp.sidebar.set_selected(self.index_of(&section).unwrap_or(0));
         imp.rebuilding.set(false);
+    }
+
+    /// "Empty List…" plus every preset that isn't a list right now.
+    fn rebuild_new_list_menu(&self, status: &Status) {
+        let menu = gio::Menu::new();
+        menu.append(Some("_Empty List…"), Some("win.new-list"));
+        let from_preset = gio::Menu::new();
+        for preset in presets::PRESETS.iter().filter(|p| status.state.list(p.id).is_none()) {
+            let item = gio::MenuItem::new(Some(preset.name), None);
+            item.set_action_and_target_value(Some("win.add-preset-list"), Some(&preset.id.to_variant()));
+            from_preset.append_item(&item);
+        }
+        if from_preset.n_items() > 0 {
+            menu.append_section(Some("From Preset"), &from_preset);
+        }
+        self.imp().new_list_button.set_menu_model(Some(&menu));
+    }
+
+    fn add_preset_list(&self, preset: &'static Preset) {
+        let weak = self.downgrade();
+        self.spawn(move |client| async move {
+            let id = client.save_list(&preset.to_list(preset.id.to_owned())).await?;
+            let status = client.status().await?;
+            if let Some(win) = weak.upgrade() {
+                win.apply_status(status);
+                win.show_section(Section::List(id));
+            }
+            Ok(())
+        });
     }
 
     fn index_of(&self, section: &Section) -> Option<u32> {

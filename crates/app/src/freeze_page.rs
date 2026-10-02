@@ -5,10 +5,14 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::glib;
 use permafrost_common::model::Status;
+use permafrost_common::presets;
 
 use crate::format;
 use crate::ring::CountdownRing;
 use crate::window::Window;
+
+/// Presets checked by default on the Freeze page.
+const DEFAULT_PRESETS: &[&str] = &["social", "video"];
 
 mod imp {
     use super::*;
@@ -51,6 +55,8 @@ mod imp {
         pub list_rows: RefCell<Vec<(String, adw::SwitchRow)>>,
         /// Lists the person turned off, remembered across rebuilds.
         pub unchecked: RefCell<BTreeSet<String>>,
+        /// Lists this page has shown before, to pick a default for new ones.
+        pub seen: RefCell<BTreeSet<String>>,
         pub active_rows: RefCell<Vec<adw::ActionRow>>,
         pub started_at: Cell<i64>,
         pub ends_at: Cell<i64>,
@@ -223,6 +229,13 @@ impl FreezePage {
         }
         let mut rows = Vec::new();
         for list in &status.state.lists {
+            // Presets start unchecked, apart from the two most people freeze.
+            if imp.seen.borrow_mut().insert(list.id.clone())
+                && presets::find(&list.id).is_some()
+                && !DEFAULT_PRESETS.contains(&list.id.as_str())
+            {
+                imp.unchecked.borrow_mut().insert(list.id.clone());
+            }
             let row = adw::SwitchRow::builder()
                 .title(&list.name)
                 .subtitle(format::list_summary(list.sites.len(), list.apps.len()))

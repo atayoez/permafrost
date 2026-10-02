@@ -41,8 +41,8 @@ template $PermafrostWindow: Adw.ApplicationWindow {
           content: Adw.Sidebar sidebar {};
 
           [bottom]
-          Button {
-            action-name: "win.new-list";
+          MenuButton new_list_button {
+            tooltip-text: _("New Block List");
             margin-start: 6;
             margin-end: 6;
             margin-top: 6;

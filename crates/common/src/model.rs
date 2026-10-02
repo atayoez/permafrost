@@ -91,6 +91,9 @@ pub struct State {
     pub schedules: Vec<Schedule>,
     #[serde(default)]
     pub freeze: Option<Freeze>,
+    /// Presets already added once, so deleting one doesn't bring it back.
+    #[serde(default)]
+    pub seeded_presets: Vec<String>,
 }
 
 /// What's in effect right now, as the service sees it.
@@ -114,6 +117,22 @@ impl State {
 
     pub fn schedule(&self, id: &str) -> Option<&Schedule> {
         self.schedules.iter().find(|s| s.id == id)
+    }
+
+    /// Adds presets this state hasn't seen yet as block lists. Returns whether anything changed.
+    pub fn seed_presets(&mut self) -> bool {
+        let mut changed = false;
+        for preset in crate::presets::PRESETS {
+            if self.seeded_presets.iter().any(|id| id == preset.id) {
+                continue;
+            }
+            if self.list(preset.id).is_none() {
+                self.lists.push(preset.to_list(preset.id.to_owned()));
+            }
+            self.seeded_presets.push(preset.id.to_owned());
+            changed = true;
+        }
+        changed
     }
 
     /// Ends an expired freeze. Returns whether anything changed.
@@ -242,6 +261,16 @@ mod tests {
         assert!(status.check_list_update(&list).is_err());
         assert!(status.check_list_delete("a").is_err());
         assert!(status.can_stop_freeze().is_err());
+    }
+
+    #[test]
+    fn seeds_presets_once() {
+        let mut state = State::default();
+        assert!(state.seed_presets());
+        assert!(state.list("gambling").is_some() && state.list("adult").is_some());
+        state.lists.retain(|l| l.id != "gambling");
+        assert!(!state.seed_presets(), "a deleted preset stays deleted");
+        assert!(state.list("gambling").is_none());
     }
 
     #[test]

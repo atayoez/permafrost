@@ -10,6 +10,12 @@ pub fn run() -> glib::ExitCode {
         .resource_base_path("/io/github/atayoez/Permafrost")
         .build();
 
+    // Debug screenshots must not hand off to an installed instance that's already running.
+    #[cfg(debug_assertions)]
+    if std::env::var_os("PERMAFROST_SCREENSHOT").is_some() {
+        app.set_flags(gio::ApplicationFlags::NON_UNIQUE);
+    }
+
     app.connect_startup(|app| {
         gtk::Window::set_default_icon_name(APP_ID);
         setup_actions(app);

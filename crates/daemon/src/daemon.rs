@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::Context;
 use nix::time::{ClockId, clock_gettime};
 use permafrost_common::model::{BlockList, Freeze, Schedule, State, Status};
-use permafrost_common::{domain, presets};
+use permafrost_common::domain;
 
 use crate::apps::AppEnforcer;
 use crate::hosts;
@@ -67,12 +67,13 @@ fn boottime() -> Duration {
 
 impl Daemon {
     pub fn load(options: Options) -> anyhow::Result<Self> {
-        let state = match std::fs::read_to_string(&options.state_file) {
+        let mut state: State = match std::fs::read_to_string(&options.state_file) {
             Ok(json) => serde_json::from_str(&json).with_context(|| format!("reading {}", options.state_file.display()))?,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => default_state(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => State::default(),
             Err(e) => return Err(e).context("reading state"),
         };
-        Ok(Self {
+        let seeded = state.seed_presets();
+        let daemon = Self {
             state,
             options,
             apps: AppEnforcer::default(),
@@ -80,7 +81,11 @@ impl Daemon {
             applied_hosts: None,
             last_active: BTreeSet::new(),
             last_clocks: None,
-        })
+        };
+        if seeded {
+            daemon.save()?;
+        }
+        Ok(daemon)
     }
 
     pub fn status(&self) -> Status {
@@ -275,18 +280,6 @@ impl Daemon {
         std::fs::write(&tmp, serde_json::to_vec_pretty(&self.state)?)?;
         std::fs::rename(&tmp, path)?;
         Ok(())
-    }
-}
-
-/// First run: start with the presets people reach for most, all inactive.
-fn default_state() -> State {
-    State {
-        lists: ["social", "video"]
-            .iter()
-            .filter_map(|id| presets::find(id))
-            .map(|p| p.to_list(p.id.to_owned()))
-            .collect(),
-        ..Default::default()
     }
 }
 
