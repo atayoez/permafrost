@@ -8,6 +8,8 @@
       <stop offset="1" stop-color="#9a9996"/>
     </linearGradient>
   </defs>
+  <!-- Drawn on a 96 px grid, scaled to the 104 px GNOME uses for square icons. -->
+  <g transform="translate(64 64) scale(1.08333) translate(-64 -64)">
   <!-- rounded square tile: chin + front -->
   <!-- (tops start under the snow cap so they never peek past its edge) -->
   <path d="M16 32h96v64a16 16 0 0 1-16 16H32a16 16 0 0 1-16-16z" fill="#1a5fb4"/>
@@ -37,5 +39,6 @@
     </g>
     <use href="#arm" transform="rotate(60)"/>
     <use href="#arm" transform="rotate(120)"/>
+  </g>
   </g>
 </svg>
