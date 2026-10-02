@@ -3,6 +3,27 @@ using Adw 1;
 
 template $PermafrostListPage: Adw.Bin {
   child: Adw.PreferencesPage {
+    Adw.PreferencesGroup {
+      title: _("Daily Limit");
+
+      Adw.SwitchRow limit_row {
+        title: _("Limit Daily Use");
+      }
+
+      Adw.SpinRow limit_minutes_row {
+        title: _("Minutes per Day");
+        visible: bind limit_row.active;
+
+        adjustment: Adjustment {
+          lower: 5;
+          upper: 720;
+          step-increment: 5;
+          page-increment: 30;
+          value: 30;
+        };
+      }
+    }
+
     Adw.PreferencesGroup community_group {
       title: _("Community Lists");
       description: _("Large lists maintained by volunteers, downloaded each time Permafrost starts");

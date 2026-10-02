@@ -18,6 +18,9 @@ pub struct BlockList {
     /// Community blocklists (`community::SOURCES` ids) included in this list.
     #[serde(default)]
     pub community: Vec<String>,
+    /// Minutes a day its sites and apps may be used before it's blocked until midnight.
+    #[serde(default)]
+    pub daily_limit: Option<u32>,
 }
 
 /// App-wide settings.
@@ -116,6 +119,9 @@ pub struct DayStats {
     pub freezes: u32,
     #[serde(default)]
     pub apps_closed: u32,
+    /// Seconds each block list with a daily limit was in use.
+    #[serde(default)]
+    pub usage: BTreeMap<String, u64>,
 }
 
 /// A day counts towards a streak with at least this much focus.
@@ -244,6 +250,9 @@ pub struct Status {
     pub locked_until: Option<i64>,
     /// Schedules running now, which can't be edited if they're locked.
     pub running_schedules: BTreeSet<String>,
+    /// Lists whose daily limit is used up; they're blocked and locked until midnight.
+    #[serde(default)]
+    pub limit_reached: BTreeSet<String>,
     /// While a freeze is on a break: when the break ends.
     #[serde(default)]
     pub on_break_until: Option<i64>,
@@ -367,6 +376,21 @@ impl State {
             }
         }
 
+        let today = self.history.get(&day_key(local.date_naive()));
+        let next_midnight = (local.date_naive() + chrono::Duration::days(1))
+            .and_hms_opt(0, 0, 0)
+            .and_then(|m| m.and_local_timezone(Local).earliest())
+            .map_or(now + 24 * 60 * 60, |m| m.timestamp());
+        for list in &self.lists {
+            let Some(limit) = list.daily_limit else { continue };
+            let used = today.and_then(|d| d.usage.get(&list.id)).copied().unwrap_or(0);
+            if used >= u64::from(limit) * 60 {
+                status.limit_reached.insert(list.id.clone());
+                status.active_lists.insert(list.id.clone());
+                lock_until(next_midnight, std::slice::from_ref(&list.id), &mut status);
+            }
+        }
+
         status.active_lists.retain(|id| self.list(id).is_some());
         status
     }
@@ -384,7 +408,12 @@ impl Status {
         let removed_site = old.sites.iter().any(|s| !new.sites.contains(s));
         let removed_app = old.apps.iter().any(|a| !new.apps.contains(a));
         let removed_source = old.community.iter().any(|c| !new.community.contains(c));
-        if removed_site || removed_app || removed_source {
+        let raised_limit = match (old.daily_limit, new.daily_limit) {
+            (Some(old), Some(new)) => new > old,
+            (Some(_), None) => true,
+            (None, _) => false,
+        };
+        if removed_site || removed_app || removed_source || raised_limit {
             return Err(format!("“{}” is frozen: you can add to it, but not remove from it", old.name));
         }
         Ok(())
@@ -507,6 +536,28 @@ mod tests {
         let round_four_ends = (4 * 25 + 3 * 5) * 60;
         assert_eq!(freeze.phase(round_four_ends + 60), Phase::OnBreak { until: round_four_ends + 15 * 60, round: 4, long: true });
         assert!(matches!(freeze.phase(round_four_ends + 16 * 60), Phase::Working { round: 5, .. }));
+    }
+
+    #[test]
+    fn daily_limits_block_until_midnight() {
+        let today = Local::now().date_naive();
+        let mut state = State {
+            lists: vec![BlockList { id: "games".into(), name: "Games".into(), daily_limit: Some(30), ..Default::default() }],
+            ..Default::default()
+        };
+        let now = Local::now().timestamp();
+        let mut day = DayStats::default();
+        day.usage.insert("games".into(), 29 * 60);
+        state.history.insert(day_key(today), day);
+        assert!(state.status(now).limit_reached.is_empty());
+
+        state.history.get_mut(&day_key(today)).unwrap().usage.insert("games".into(), 30 * 60);
+        let status = state.status(now);
+        assert!(status.limit_reached.contains("games"));
+        assert!(status.active_lists.contains("games"));
+        let mut raised = state.lists[0].clone();
+        raised.daily_limit = Some(60);
+        assert!(status.check_list_update(&raised).is_err(), "can't raise a used-up limit");
     }
 
     fn frozen_state() -> State {

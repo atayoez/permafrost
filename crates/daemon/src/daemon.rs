@@ -63,6 +63,8 @@ pub struct Daemon {
     last_active: BTreeSet<String>,
     /// Focus time below a second, carried to the next tick.
     focus_carry_ms: u64,
+    /// Limited filters' usage below a second, carried to the next tick.
+    limit_carry_ms: std::collections::HashMap<String, u64>,
     /// When history was last saved; it's saved at most once a minute.
     history_saved: std::time::Instant,
     /// Wall clock and boot clock at the last tick, to notice clock changes.
@@ -98,6 +100,7 @@ impl Daemon {
             last_clocks: None,
             history_saved: std::time::Instant::now(),
             focus_carry_ms: 0,
+            limit_carry_ms: Default::default(),
             options,
         };
         if seeded {
@@ -141,6 +144,9 @@ impl Daemon {
         list.apps = list.apps.iter().map(|a| a.trim().trim_end_matches(".desktop").to_owned()).filter(|a| !a.is_empty()).collect();
         list.apps.dedup();
         list.community.retain(|id| community::find(id).is_some());
+        if list.daily_limit.is_some_and(|m| !(5..=24 * 60).contains(&m)) {
+            return Err(Error::Invalid("A daily limit is between 5 minutes and a day".into()));
+        }
         list.community.dedup();
 
         self.status().check_list_update(&list).map_err(Error::Denied)?;
@@ -283,6 +289,8 @@ impl Daemon {
 
         let status = self.status_at(wall);
         let closed_apps = self.enforce(&status);
+        let (using_limited, limit_reached) = self.track_limits(&status, elapsed);
+        changed |= limit_reached;
         if !status.active_lists.is_empty() {
             // Ticks are 2 s apart; a longer gap means the computer was asleep.
             let millis = self.focus_carry_ms + elapsed.as_millis().min(5000) as u64;
@@ -290,7 +298,7 @@ impl Daemon {
             self.focus_carry_ms = millis % 1000;
         }
         self.today().apps_closed += closed_apps.len() as u32;
-        let focusing = !status.active_lists.is_empty();
+        let focusing = !status.active_lists.is_empty() || using_limited;
         if !closed_apps.is_empty() || (focusing && self.history_saved.elapsed() >= Duration::from_secs(60)) {
             self.history_saved = std::time::Instant::now();
             changed = true;
@@ -356,6 +364,38 @@ impl Daemon {
             return false;
         }
         true
+    }
+
+    /// Adds this tick's time to filters with a daily limit that are in use.
+    /// Returns whether any was in use, and whether one just used up its limit.
+    fn track_limits(&mut self, status: &Status, elapsed: Duration) -> (bool, bool) {
+        let limited: Vec<BlockList> = self
+            .state
+            .lists
+            .iter()
+            .filter(|l| l.daily_limit.is_some() && !status.limit_reached.contains(&l.id))
+            .cloned()
+            .collect();
+        if limited.is_empty() {
+            return (false, false);
+        }
+        let apps: BTreeSet<String> = limited.iter().flat_map(|l| l.apps.iter().cloned()).collect();
+        let running = self.apps.running(&apps);
+        let millis = elapsed.as_millis().min(5000) as u64;
+        let (mut using, mut reached) = (false, false);
+        for list in limited {
+            if !list.apps.iter().any(|a| running.contains(a)) {
+                continue;
+            }
+            using = true;
+            let carry = self.limit_carry_ms.entry(list.id.clone()).or_default();
+            let total = *carry + millis;
+            *carry = total % 1000;
+            let used = self.today().usage.entry(list.id.clone()).or_default();
+            *used += total / 1000;
+            reached |= *used >= u64::from(list.daily_limit.unwrap_or(0)) * 60;
+        }
+        (using, reached)
     }
 
     /// Today's statistics, dropping days older than 90.

@@ -108,6 +108,8 @@ mod imp {
         pub hold: RefCell<Option<gio::ApplicationHoldGuard>>,
         pub background_requested: Cell<bool>,
         pub background_message: RefCell<String>,
+        /// Filters whose daily limit was used up, to announce new ones.
+        pub limit_reached: RefCell<Option<std::collections::BTreeSet<String>>>,
         /// Whether the freeze was on a break at the last tick, to announce changes.
         pub on_break: Cell<Option<bool>>,
         /// Schedule runs already announced, as `<id>-<date>-<start>`.
@@ -376,15 +378,13 @@ impl Window {
 
         match status.locked_until {
             Some(until) => {
-                imp.banner.set_title(&format!(
-                    "Frozen until {} — locked filters can only get stricter",
-                    format::clock(until)
-                ));
+                imp.banner.set_title(&format!("Locked filters can only get stricter until {}", format::clock(until)));
                 imp.banner.set_revealed(true);
             }
             None => imp.banner.set_revealed(false),
         }
 
+        self.announce_limits(&status);
         self.update_background(&status);
         self.tick();
     }
@@ -451,6 +451,18 @@ impl Window {
             notification.set_body(Some(&format!("{} will be blocked {until}.", names.join(", "))));
             notification.set_icon(&gio::ThemedIcon::new(APP_SYMBOLIC));
             app.send_notification(Some(&format!("schedule-{}", schedule.id)), &notification);
+        }
+    }
+
+    fn announce_limits(&self, status: &Status) {
+        let before = self.imp().limit_reached.replace(Some(status.limit_reached.clone()));
+        let (Some(before), Some(app)) = (before, self.application()) else { return };
+        for id in status.limit_reached.difference(&before) {
+            let Some(list) = status.state.list(id) else { continue };
+            let notification = gio::Notification::new(&format!("{}: daily limit reached", list.name));
+            notification.set_body(Some("Blocked until midnight."));
+            notification.set_icon(&gio::ThemedIcon::new(APP_SYMBOLIC));
+            app.send_notification(Some(&format!("limit-{id}")), &notification);
         }
     }
 

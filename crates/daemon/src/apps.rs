@@ -92,6 +92,29 @@ impl AppEnforcer {
         closed.into_iter().collect()
     }
 
+    /// Which of `apps` are running now.
+    pub fn running(&mut self, apps: &BTreeSet<String>) -> BTreeSet<String> {
+        if apps.is_empty() {
+            return BTreeSet::new();
+        }
+        let mut running: BTreeSet<String> = app_scopes(Path::new(CGROUP_ROOT), 0)
+            .iter()
+            .filter(|scope| has_processes(scope))
+            .filter_map(|scope| scope.file_name()?.to_str().and_then(app_id_from_scope))
+            .filter(|id| apps.contains(id))
+            .collect();
+        let by_exe: HashMap<String, &String> =
+            apps.iter().filter_map(|id| self.executable(id).map(|exe| (exe, id))).collect();
+        if !by_exe.is_empty() {
+            for (_, exe) in user_processes() {
+                if let Some(id) = by_exe.get(&exe) {
+                    running.insert((*id).clone());
+                }
+            }
+        }
+        running
+    }
+
     fn executable(&mut self, app_id: &str) -> Option<String> {
         self.executables.entry(app_id.to_owned()).or_insert_with(|| desktop_executable(app_id)).clone()
     }

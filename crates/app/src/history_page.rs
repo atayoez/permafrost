@@ -110,7 +110,7 @@ impl HistoryPage {
         let most = days.iter().map(|d| stats(*d).focus_seconds).max().unwrap_or(0).max(1);
         let mut rows = Vec::new();
         for (ago, date) in days.iter().enumerate() {
-            let DayStats { focus_seconds, freezes, apps_closed } = stats(*date);
+            let DayStats { focus_seconds, freezes, apps_closed, .. } = stats(*date);
             let title = match ago {
                 0 => "Today".to_owned(),
                 1 => "Yesterday".to_owned(),

@@ -20,6 +20,7 @@ impl Preset {
             sites: self.sites.iter().map(|s| (*s).to_owned()).collect(),
             apps: self.apps.iter().map(|a| (*a).to_owned()).collect(),
             community: self.community.iter().map(|c| (*c).to_owned()).collect(),
+            daily_limit: None,
         }
     }
 }

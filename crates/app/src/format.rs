@@ -15,7 +15,10 @@ pub fn clock(timestamp: i64) -> String {
     let Some(at) = Local.timestamp_opt(timestamp, 0).single() else {
         return String::new();
     };
-    if at.date_naive() == Local::now().date_naive() {
+    let tomorrow = Local::now().date_naive() + chrono::Duration::days(1);
+    if at.date_naive() == tomorrow && at.format("%H:%M").to_string() == "00:00" {
+        "midnight".to_owned()
+    } else if at.date_naive() == Local::now().date_naive() {
         at.format("%H:%M").to_string()
     } else {
         at.format("%a %H:%M").to_string()
@@ -79,7 +82,18 @@ pub fn site_count(list: &BlockList, status: &Status) -> usize {
 }
 
 pub fn list_summary(list: &BlockList, status: &Status) -> String {
-    counts(site_count(list, status), list.apps.len())
+    let mut summary = counts(site_count(list, status), list.apps.len());
+    if let Some(limit) = list.daily_limit {
+        let used = usage_today(status, &list.id);
+        summary.push_str(&format!(" · {} of {} today", duration(used), duration(u64::from(limit) * 60)));
+    }
+    summary
+}
+
+/// Seconds `list` has been in use today.
+pub fn usage_today(status: &Status, list: &str) -> u64 {
+    let today = permafrost_common::model::day_key(chrono::Local::now().date_naive());
+    status.state.history.get(&today).and_then(|d| d.usage.get(list)).copied().unwrap_or(0)
 }
 
 fn counts(sites: usize, apps: usize) -> String {

@@ -20,7 +20,13 @@ mod imp {
         #[template_child]
         pub sites_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
+        pub limit_row: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub limit_minutes_row: TemplateChild<adw::SpinRow>,
+        #[template_child]
         pub community_group: TemplateChild<adw::PreferencesGroup>,
+        /// Set while the page fills in its widgets, so that isn't saved back.
+        pub loading: Cell<bool>,
         #[template_child]
         pub add_community_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
@@ -80,6 +86,17 @@ impl ListPage {
     fn setup(&self) {
         let imp = self.imp();
 
+        imp.limit_row.connect_active_notify(glib::clone!(
+            #[weak(rename_to = page)]
+            self,
+            move |_| page.save_limit()
+        ));
+        imp.limit_minutes_row.connect_value_notify(glib::clone!(
+            #[weak(rename_to = page)]
+            self,
+            move |_| page.save_limit()
+        ));
+
         imp.site_entry.connect_apply(glib::clone!(
             #[weak(rename_to = page)]
             self,
@@ -126,6 +143,15 @@ impl ListPage {
         self.root().and_downcast()
     }
 
+    fn save_limit(&self) {
+        let imp = self.imp();
+        if imp.loading.get() {
+            return;
+        }
+        let limit = imp.limit_row.is_active().then(|| imp.limit_minutes_row.value() as u32);
+        self.edit(|list| list.daily_limit = limit);
+    }
+
     /// Changes the shown list and saves it. The service sends the result back.
     fn edit(&self, change: impl FnOnce(&mut BlockList)) {
         let Some(mut list) = self.imp().list.borrow().clone() else { return };
@@ -138,6 +164,7 @@ impl ListPage {
     pub fn set_list(&self, list: &BlockList, status: &Status) {
         let imp = self.imp();
         let locked = status.locked_lists.contains(&list.id);
+        self.update_limit(list, status, locked);
         if imp.list.borrow().as_ref() == Some(list) && imp.locked.get() == locked {
             return;
         }
@@ -190,6 +217,27 @@ impl ListPage {
         imp.apps_group.add(&*imp.add_app_row);
         imp.rows.replace(rows);
 
+    }
+
+    fn update_limit(&self, list: &BlockList, status: &Status, locked: bool) {
+        let imp = self.imp();
+        imp.loading.set(true);
+        imp.limit_row.set_active(list.daily_limit.is_some());
+        let minutes = list.daily_limit.unwrap_or(30);
+        // While locked, a limit can be lowered but not raised or removed.
+        let adjustment = imp.limit_minutes_row.adjustment();
+        adjustment.set_upper(if locked && list.daily_limit.is_some() { f64::from(minutes) } else { 720.0 });
+        imp.limit_minutes_row.set_value(f64::from(minutes));
+        imp.limit_row.set_sensitive(!(locked && list.daily_limit.is_some()));
+        let used = format::usage_today(status, &list.id);
+        imp.limit_row.set_subtitle(&if status.limit_reached.contains(&list.id) {
+            "Used up for today — blocked until midnight".to_owned()
+        } else if list.daily_limit.is_some() {
+            format!("Used {} today. Counts time its apps are open.", format::duration(used))
+        } else {
+            "Block it for the rest of the day once its time is used up".to_owned()
+        });
+        imp.loading.set(false);
     }
 
     fn remove_button(&self, label: &str, remove: impl Fn(&mut BlockList) + 'static) -> gtk::Button {
