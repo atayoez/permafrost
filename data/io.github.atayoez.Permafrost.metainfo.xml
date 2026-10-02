@@ -11,15 +11,47 @@
       Lock a freeze and it can’t be stopped early, even by restarting your computer.
     </p>
     <ul>
-      <li>Block websites and apps with ready-made lists for social media, video, news, shopping, games and adult content</li>
-      <li>Freeze for 25 minutes or a whole day, or block on a weekly schedule</li>
-      <li>Locked lists can only get stricter until the timer ends</li>
+      <li>Block websites and apps with filters for social media, video, news, shopping, games, gambling, adult content and harmful sites, or make your own</li>
+      <li>Add community lists with hundreds of thousands of sites</li>
+      <li>Freeze for 25 minutes or a whole day, with optional breaks, or block on a schedule</li>
+      <li>Locked filters can only get stricter until the timer ends</li>
       <li>Force SafeSearch on Google, Bing, DuckDuckGo and YouTube</li>
+      <li>See your focus time and streak in History</li>
     </ul>
   </description>
   <developer id="io.github.atayoez">
     <name>Atay Özcan</name>
   </developer>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/freeze.png</image>
+      <caption>Pick how long to freeze and what to block</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/frozen.png</image>
+      <caption>A locked freeze counting down, with a break coming up</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/filters.png</image>
+      <caption>Built-in and custom filters</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/filter.png</image>
+      <caption>A filter with its community lists, websites and apps</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/schedules.png</image>
+      <caption>Schedules that block filters automatically</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/history.png</image>
+      <caption>Focus time and your streak</caption>
+    </screenshot>
+  </screenshots>
+  <branding>
+    <color type="primary" scheme_preference="light">#99c1f1</color>
+    <color type="primary" scheme_preference="dark">#1a5fb4</color>
+  </branding>
   <url type="homepage">https://github.com/atayoez/permafrost</url>
   <url type="bugtracker">https://github.com/atayoez/permafrost/issues</url>
   <launchable type="desktop-id">io.github.atayoez.Permafrost.desktop</launchable>
