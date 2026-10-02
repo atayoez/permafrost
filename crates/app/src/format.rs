@@ -38,10 +38,12 @@ pub fn days(days: &[bool; 7]) -> String {
 }
 
 pub fn schedule_summary(schedule: &Schedule, list_names: &[String]) -> String {
-    let mut parts = vec![
-        days(&schedule.days),
-        format!("{}–{}", minutes_of_day(schedule.start), minutes_of_day(schedule.end)),
-    ];
+    let hours = if schedule.all_day {
+        "All day".to_owned()
+    } else {
+        format!("{}–{}", minutes_of_day(schedule.start), minutes_of_day(schedule.end))
+    };
+    let mut parts = vec![days(&schedule.days), hours];
     if !list_names.is_empty() {
         parts.push(list_names.join(", "));
     }

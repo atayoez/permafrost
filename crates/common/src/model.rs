@@ -58,6 +58,9 @@ pub struct Schedule {
     pub lists: Vec<String>,
     /// Can't be turned off or edited while it's running.
     pub locked: bool,
+    /// Runs the whole of each selected day; `start` and `end` are ignored.
+    #[serde(default)]
+    pub all_day: bool,
 }
 
 impl Default for Schedule {
@@ -71,6 +74,7 @@ impl Default for Schedule {
             end: 17 * 60,
             lists: Vec::new(),
             locked: false,
+            all_day: false,
         }
     }
 }
@@ -78,13 +82,16 @@ impl Default for Schedule {
 impl Schedule {
     /// The end of the run that covers `at`, if one does.
     pub fn active_until<Tz: TimeZone>(&self, at: &DateTime<Tz>) -> Option<DateTime<Tz>> {
+        let day = at.weekday().num_days_from_monday() as usize;
+        let midnight = at.clone() - chrono::Duration::seconds(i64::from(at.num_seconds_from_midnight()));
+        if self.enabled && self.all_day {
+            return self.days[day].then(|| midnight + chrono::Duration::days(1));
+        }
         if !self.enabled || self.start == self.end {
             return None;
         }
-        let day = at.weekday().num_days_from_monday() as usize;
         let yesterday = (day + 6) % 7;
         let minute = (at.hour() * 60 + at.minute()) as u16;
-        let midnight = at.clone() - chrono::Duration::seconds(i64::from(at.num_seconds_from_midnight()));
         let end_today = midnight.clone() + chrono::Duration::minutes(i64::from(self.end));
 
         if self.start < self.end {
@@ -343,6 +350,14 @@ mod tests {
         assert_eq!(s.active_until(&at(5, 23, 0)), Some(at(6, 6, 0)), "Monday night");
         assert_eq!(s.active_until(&at(6, 5, 0)), Some(at(6, 6, 0)), "continues into Tuesday");
         assert_eq!(s.active_until(&at(6, 23, 0)), None, "Tuesday isn't selected");
+    }
+
+    #[test]
+    fn all_day_schedule() {
+        let s = Schedule { all_day: true, days: [true, false, false, false, false, false, true], ..Default::default() };
+        assert_eq!(s.active_until(&at(5, 0, 0)), Some(at(6, 0, 0)), "all of Monday");
+        assert_eq!(s.active_until(&at(5, 23, 59)), Some(at(6, 0, 0)));
+        assert_eq!(s.active_until(&at(6, 12, 0)), None, "Tuesday is off");
     }
 
     fn frozen_state() -> State {

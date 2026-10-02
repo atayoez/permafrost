@@ -31,7 +31,7 @@ fn upcoming_schedules(status: &Status, minutes: u32) -> Vec<(&Schedule, u32)> {
         .iter()
         .filter(|s| s.enabled && !status.running_schedules.contains(&s.id))
         .filter_map(|s| {
-            let start = u32::from(s.start);
+            let start = if s.all_day { 0 } else { u32::from(s.start) };
             // Starting later today, or just after midnight tomorrow.
             let (day, until) =
                 if start > minute { (today, start - minute) } else { ((today + 1) % 7, start + 24 * 60 - minute) };
@@ -432,11 +432,12 @@ impl Window {
                 schedule.lists.iter().filter_map(|id| status.state.list(id)).map(|l| l.name.as_str()).collect();
             let when = if minutes <= 1 { "in a minute".to_owned() } else { format!("in {minutes} minutes") };
             let notification = gio::Notification::new(&format!("{} starts {when}", schedule.name));
-            notification.set_body(Some(&format!(
-                "{} will be blocked until {}.",
-                names.join(", "),
-                format::minutes_of_day(schedule.end)
-            )));
+            let until = if schedule.all_day {
+                "for the rest of the day".to_owned()
+            } else {
+                format!("until {}", format::minutes_of_day(schedule.end))
+            };
+            notification.set_body(Some(&format!("{} will be blocked {until}.", names.join(", "))));
             notification.set_icon(&gio::ThemedIcon::new(APP_SYMBOLIC));
             app.send_notification(Some(&format!("schedule-{}", schedule.id)), &notification);
         }

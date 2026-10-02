@@ -97,12 +97,17 @@ pub fn present(win: &Window, status: &Status, existing: Option<Schedule>) {
 
     let time_group = adw::PreferencesGroup::builder()
         .title("Time")
-        .description("An end before the start runs overnight")
+        .description("An end before the start runs overnight. All-day schedules can’t be locked.")
         .build();
+    let all_day = adw::SwitchRow::builder().title("All Day").active(schedule.all_day).build();
     let (start_row, start_h, start_m) = time_row("Starts", schedule.start);
     let (end_row, end_h, end_m) = time_row("Ends", schedule.end);
+    time_group.add(&all_day);
     time_group.add(&start_row);
     time_group.add(&end_row);
+    for row in [&start_row, &end_row] {
+        all_day.bind_property("active", row, "visible").invert_boolean().sync_create().build();
+    }
     page.add(&time_group);
 
     let lists_group = adw::PreferencesGroup::builder().title("Block").build();
@@ -122,8 +127,19 @@ pub fn present(win: &Window, status: &Status, existing: Option<Schedule>) {
     let locked = adw::SwitchRow::builder()
         .title("Lock While Running")
         .subtitle("Can’t be turned off or edited until it ends")
-        .active(schedule.locked)
+        .active(schedule.locked && !schedule.all_day)
         .build();
+    // All-day schedules may never end, so they can't be locked.
+    all_day.bind_property("active", &locked, "sensitive").invert_boolean().sync_create().build();
+    all_day.connect_active_notify(glib::clone!(
+        #[weak]
+        locked,
+        move |all_day| {
+            if all_day.is_active() {
+                locked.set_active(false);
+            }
+        }
+    ));
     lock_group.add(&locked);
     page.add(&lock_group);
 
@@ -161,7 +177,8 @@ pub fn present(win: &Window, status: &Status, existing: Option<Schedule>) {
             updated.start = to_minutes(&start_h, &start_m);
             updated.end = to_minutes(&end_h, &end_m);
             updated.lists = list_rows.iter().filter(|(_, row)| row.is_active()).map(|(id, _)| id.clone()).collect();
-            updated.locked = locked.is_active();
+            updated.all_day = all_day.is_active();
+            updated.locked = locked.is_active() && !updated.all_day;
             if updated.name.is_empty() {
                 win.toast("Give the schedule a name");
                 return;

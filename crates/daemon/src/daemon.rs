@@ -169,6 +169,10 @@ impl Daemon {
             return Err(Error::Invalid("Times must be within a day".into()));
         }
         schedule.lists.retain(|id| self.state.list(id).is_some());
+        // An all-day schedule can run without a break, so a lock might never end.
+        if schedule.all_day {
+            schedule.locked = false;
+        }
         if !schedule.id.is_empty() {
             self.status().check_schedule_change(&schedule.id).map_err(Error::Denied)?;
         } else {
