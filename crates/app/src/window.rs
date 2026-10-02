@@ -5,7 +5,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use futures_util::StreamExt;
 use gtk::{gio, glib};
-use permafrost_common::model::{BlockList, Status};
+use permafrost_common::model::{BlockList, Schedule, Status};
 use permafrost_common::presets::{self, Preset};
 
 use crate::client::Client;
@@ -16,6 +16,30 @@ use crate::schedules_page::SchedulesPage;
 
 const APP_SYMBOLIC: &str = "io.github.atayoez.Permafrost-symbolic";
 const LIST_ICON: &str = "security-high-symbolic";
+
+const REMIND_BEFORE_SCHEDULE: u32 = 5;
+const HOLD_BEFORE_SCHEDULE: u32 = 10;
+
+/// Enabled schedules that start within `minutes`, with the minutes left.
+fn upcoming_schedules(status: &Status, minutes: u32) -> Vec<(&Schedule, u32)> {
+    use chrono::{Datelike, Timelike};
+    let now = chrono::Local::now();
+    let today = now.weekday().num_days_from_monday() as usize;
+    let minute = now.hour() * 60 + now.minute();
+    status
+        .state
+        .schedules
+        .iter()
+        .filter(|s| s.enabled && !status.running_schedules.contains(&s.id))
+        .filter_map(|s| {
+            let start = u32::from(s.start);
+            // Starting later today, or just after midnight tomorrow.
+            let (day, until) =
+                if start > minute { (today, start - minute) } else { ((today + 1) % 7, start + 24 * 60 - minute) };
+            (s.days[day] && until <= minutes).then_some((s, until))
+        })
+        .collect()
+}
 
 /// What the content pane shows.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -67,6 +91,8 @@ mod imp {
         pub hold: RefCell<Option<gio::ApplicationHoldGuard>>,
         pub background_requested: Cell<bool>,
         pub background_message: RefCell<String>,
+        /// Schedule runs already announced, as `<id>-<date>-<start>`.
+        pub reminded: RefCell<std::collections::HashSet<String>>,
     }
 
     #[glib::object_subclass]
@@ -332,12 +358,29 @@ impl Window {
         self.imp().content_page.set_title(if frozen { "Frozen" } else { "Freeze" });
     }
 
-    /// Keeps the app alive in the background while anything is being blocked.
+    /// Keeps the app alive in the background while anything is being blocked,
+    /// or a schedule is about to start, so its notifications still arrive.
     fn update_background(&self, status: &Status) {
         let imp = self.imp();
         let active = !status.active_lists.is_empty();
-        self.set_hide_on_close(active);
-        if active {
+        self.set_hold(active || !upcoming_schedules(status, HOLD_BEFORE_SCHEDULE).is_empty());
+
+        let message = match (&status.state.freeze, status.locked_until) {
+            (Some(f), _) if f.ends_at > status.now => format!("Frozen until {}", format::clock(f.ends_at)),
+            (_, Some(until)) => format!("Blocking until {}", format::clock(until)),
+            _ if active => "Blocking on schedule".to_owned(),
+            _ => String::new(),
+        };
+        if *imp.background_message.borrow() != message && imp.background_requested.get() {
+            imp.background_message.replace(message.clone());
+            glib::spawn_future_local(async move { crate::background::set_status(&message).await });
+        }
+    }
+
+    fn set_hold(&self, hold: bool) {
+        let imp = self.imp();
+        self.set_hide_on_close(hold);
+        if hold {
             if imp.hold.borrow().is_none()
                 && let Some(app) = self.application()
             {
@@ -349,16 +392,28 @@ impl Window {
         } else {
             imp.hold.replace(None);
         }
+    }
 
-        let message = match (&status.state.freeze, status.locked_until) {
-            (Some(f), _) if f.ends_at > status.now => format!("Frozen until {}", format::clock(f.ends_at)),
-            (_, Some(until)) => format!("Blocking until {}", format::clock(until)),
-            _ if active => "Blocking on schedule".to_owned(),
-            _ => String::new(),
-        };
-        if *imp.background_message.borrow() != message && imp.background_requested.get() {
-            imp.background_message.replace(message.clone());
-            glib::spawn_future_local(async move { crate::background::set_status(&message).await });
+    /// "Work Hours starts in 5 minutes", once per run of each schedule.
+    fn remind_schedules(&self, status: &Status) {
+        let Some(app) = self.application() else { return };
+        let today = chrono::Local::now().date_naive();
+        for (schedule, minutes) in upcoming_schedules(status, REMIND_BEFORE_SCHEDULE) {
+            let key = format!("{}-{today}-{}", schedule.id, schedule.start);
+            if !self.imp().reminded.borrow_mut().insert(key) {
+                continue;
+            }
+            let names: Vec<&str> =
+                schedule.lists.iter().filter_map(|id| status.state.list(id)).map(|l| l.name.as_str()).collect();
+            let when = if minutes <= 1 { "in a minute".to_owned() } else { format!("in {minutes} minutes") };
+            let notification = gio::Notification::new(&format!("{} starts {when}", schedule.name));
+            notification.set_body(Some(&format!(
+                "{} will be blocked until {}.",
+                names.join(", "),
+                format::minutes_of_day(schedule.end)
+            )));
+            notification.set_icon(&gio::ThemedIcon::new(APP_SYMBOLIC));
+            app.send_notification(Some(&format!("schedule-{}", schedule.id)), &notification);
         }
     }
 
@@ -379,6 +434,10 @@ impl Window {
         let now = chrono::Utc::now().timestamp();
         let imp = self.imp();
         imp.freeze_page.tick(now);
+        self.remind_schedules(&status);
+        if status.active_lists.is_empty() {
+            self.set_hold(!upcoming_schedules(&status, HOLD_BEFORE_SCHEDULE).is_empty());
+        }
         if let Some(label) = imp.freeze_suffix.borrow().as_ref() {
             match status.state.freeze.as_ref().filter(|f| f.ends_at > now) {
                 Some(f) => {
