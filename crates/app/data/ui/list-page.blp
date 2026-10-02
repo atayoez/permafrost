@@ -3,19 +3,24 @@ using Adw 1;
 
 template $PermafrostListPage: Adw.Bin {
   child: Adw.PreferencesPage {
-    Adw.PreferencesGroup sites_group {
-      title: _("Websites");
-      description: _("Common subdomains like www. and m. are blocked too");
+    Adw.PreferencesGroup community_group {
+      title: _("Community Lists");
+      description: _("Large lists maintained by volunteers, downloaded each time Permafrost starts");
 
-      header-suffix: MenuButton preset_button {
-        label: _("Add _Preset");
-        use-underline: true;
+      header-suffix: MenuButton add_community_button {
+        icon-name: "list-add-symbolic";
+        tooltip-text: _("Add Community List");
         valign: center;
 
         styles [
           "flat",
         ]
       };
+    }
+
+    Adw.PreferencesGroup sites_group {
+      title: _("Websites");
+      description: _("Common subdomains like www. and m. are blocked too");
 
       Adw.EntryRow site_entry {
         title: _("Add website, e.g. reddit.com");

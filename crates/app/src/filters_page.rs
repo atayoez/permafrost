@@ -3,7 +3,6 @@ use std::cell::{Cell, RefCell};
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::glib;
-use permafrost_common::community::{self, Category};
 use permafrost_common::model::{Filters, Status};
 use permafrost_common::presets;
 
@@ -29,7 +28,6 @@ mod imp {
 
         pub list_rows: RefCell<Vec<adw::ActionRow>>,
 
-        pub source_rows: RefCell<Vec<(&'static str, adw::SwitchRow)>>,
         pub filters: RefCell<Filters>,
         /// Set while the page fills in its widgets, so that isn't saved back.
         pub loading: Cell<bool>,
@@ -78,32 +76,6 @@ impl FiltersPage {
                 page.edit(|filters| filters.safe_search = on);
             }
         ));
-
-        let mut rows = Vec::new();
-        for category in Category::ALL {
-            let group = adw::PreferencesGroup::builder().title(category.title()).build();
-            for source in community::SOURCES.iter().filter(|s| s.category == category) {
-                let row = adw::SwitchRow::builder().title(source.name).subtitle_lines(2).build();
-                let id = source.id;
-                row.connect_active_notify(glib::clone!(
-                    #[weak(rename_to = page)]
-                    self,
-                    move |row| {
-                        let on = row.is_active();
-                        page.edit(|filters| {
-                            filters.community.retain(|c| c != id);
-                            if on {
-                                filters.community.push(id.to_owned());
-                            }
-                        });
-                    }
-                ));
-                group.add(&row);
-                rows.push((id, row));
-            }
-            imp.page.add(&group);
-        }
-        imp.source_rows.replace(rows);
     }
 
     /// Your filters as rows that open the full list; choosing what to block
@@ -118,7 +90,7 @@ impl FiltersPage {
         for list in &status.state.lists {
             let row = adw::ActionRow::builder()
                 .title(&list.name)
-                .subtitle(format::list_summary(list))
+                .subtitle(format::list_summary(list, status))
                 .activatable(true)
                 .build();
             if status.locked_lists.contains(&list.id) {
@@ -179,18 +151,6 @@ impl FiltersPage {
         imp.safe_search_row.set_active(filters.safe_search);
         imp.safe_search_row.set_sensitive(!(locked && filters.safe_search));
 
-        for (id, row) in imp.source_rows.borrow().iter() {
-            let source = community::find(id).expect("rows come from SOURCES");
-            let on = filters.community.iter().any(|c| c == id);
-            row.set_active(on);
-            row.set_sensitive(!(locked && on));
-            let size = match status.community_sizes.get(*id) {
-                Some(n) => format!("{} sites from {}", format::thousands(*n), source.project),
-                None if on => "Downloading…".to_owned(),
-                None => format!("From {}", source.project),
-            };
-            row.set_subtitle(&format!("{}\n{size}", source.description));
-        }
         imp.loading.set(false);
     }
 }

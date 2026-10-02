@@ -4,9 +4,11 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{gio, glib};
 use permafrost_common::model::{BlockList, Status};
-use permafrost_common::{domain, presets};
+use permafrost_common::community::{self, Category};
+use permafrost_common::domain;
 
 use crate::app_picker;
+use crate::format;
 use crate::window::Window;
 
 mod imp {
@@ -18,7 +20,9 @@ mod imp {
         #[template_child]
         pub sites_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
-        pub preset_button: TemplateChild<gtk::MenuButton>,
+        pub community_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub add_community_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub site_entry: TemplateChild<adw::EntryRow>,
         #[template_child]
@@ -39,9 +43,13 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
-            klass.install_action("list.add-preset", Some(glib::VariantTy::STRING), |page, _, param| {
-                if let Some(preset) = param.and_then(|p| p.get::<String>()).and_then(|id| presets::find(&id)) {
-                    page.edit(|list| preset.merge_into(list));
+            klass.install_action("list.add-community", Some(glib::VariantTy::STRING), |page, _, param| {
+                if let Some(id) = param.and_then(|p| p.get::<String>()) {
+                    page.edit(|list| {
+                        if !list.community.contains(&id) {
+                            list.community.push(id);
+                        }
+                    });
                 }
             });
         }
@@ -71,14 +79,6 @@ glib::wrapper! {
 impl ListPage {
     fn setup(&self) {
         let imp = self.imp();
-
-        let menu = gio::Menu::new();
-        for preset in presets::PRESETS {
-            let item = gio::MenuItem::new(Some(preset.name), None);
-            item.set_action_and_target_value(Some("list.add-preset"), Some(&preset.id.to_variant()));
-            menu.append_item(&item);
-        }
-        imp.preset_button.set_menu_model(Some(&menu));
 
         imp.site_entry.connect_apply(glib::clone!(
             #[weak(rename_to = page)]
@@ -148,6 +148,21 @@ impl ListPage {
             group.remove(&row);
         }
         let mut rows = Vec::new();
+        for id in &list.community {
+            let Some(source) = community::find(id) else { continue };
+            let size = match status.community_sizes.get(id) {
+                Some(n) => format!("{} sites from {}", format::thousands(*n), source.project),
+                None => "Downloading…".to_owned(),
+            };
+            let row = adw::ActionRow::builder().title(source.name).subtitle(&size).build();
+            let id = id.clone();
+            row.add_suffix(&self.remove_button(&format!("Remove {}", source.name), move |list| {
+                list.community.retain(|c| *c != id)
+            }));
+            imp.community_group.add(&row);
+            rows.push((imp.community_group.get(), row));
+        }
+        imp.add_community_button.set_menu_model(Some(&community_menu(list)));
         for site in &list.sites {
             let row = adw::ActionRow::builder().title(site).build();
             let site = site.clone();
@@ -194,4 +209,21 @@ impl ListPage {
         ));
         button
     }
+}
+
+/// Community lists not in `list` yet, grouped by category.
+fn community_menu(list: &BlockList) -> gio::Menu {
+    let menu = gio::Menu::new();
+    for category in Category::ALL {
+        let section = gio::Menu::new();
+        for source in community::SOURCES.iter().filter(|s| s.category == category && !list.community.iter().any(|c| c == s.id)) {
+            let item = gio::MenuItem::new(Some(source.name), None);
+            item.set_action_and_target_value(Some("list.add-community"), Some(&source.id.to_variant()));
+            section.append_item(&item);
+        }
+        if section.n_items() > 0 {
+            menu.append_section(Some(category.title()), &section);
+        }
+    }
+    menu
 }

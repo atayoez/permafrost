@@ -103,10 +103,6 @@ template $PermafrostFreezePage: Adw.Bin {
           }
         }
 
-        Adw.PreferencesGroup lists_group {
-          title: _("Block");
-        }
-
         Adw.PreferencesGroup {
           Adw.SwitchRow lock_row {
             title: _("Lock Until the Timer Ends");
@@ -124,6 +120,10 @@ template $PermafrostFreezePage: Adw.Bin {
               "pill",
             ]
           }
+        }
+
+        Adw.PreferencesGroup lists_group {
+          title: _("Block");
         }
       };
     }

@@ -15,6 +15,9 @@ pub struct BlockList {
     /// Desktop app IDs without the `.desktop` suffix, e.g. `com.valvesoftware.Steam`.
     #[serde(default)]
     pub apps: Vec<String>,
+    /// Community blocklists (`community::SOURCES` ids) included in this list.
+    #[serde(default)]
+    pub community: Vec<String>,
 }
 
 /// Always-on filters, set in one place rather than per block list.
@@ -23,9 +26,10 @@ pub struct Filters {
     /// Force SafeSearch on Google, Bing, DuckDuckGo and YouTube.
     #[serde(default)]
     pub safe_search: bool,
-    /// Community blocklists (`community::SOURCES` ids) to block.
-    #[serde(default)]
-    pub community: Vec<String>,
+    /// Community lists from versions that turned them on globally; moved
+    /// into block lists by `State::migrate_community`.
+    #[serde(default, rename = "community", skip_serializing_if = "Vec::is_empty")]
+    pub legacy_community: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +108,9 @@ pub struct State {
     /// Presets already added once, so deleting one doesn't bring it back.
     #[serde(default)]
     pub seeded_presets: Vec<String>,
+    /// Whether preset lists have been given their community lists.
+    #[serde(default)]
+    pub community_seeded: bool,
 }
 
 /// What's in effect right now, as the service sees it.
@@ -145,6 +152,42 @@ impl State {
             self.seeded_presets.push(preset.id.to_owned());
             changed = true;
         }
+        changed
+    }
+
+    /// Gives preset lists their community lists once, and moves community lists
+    /// that older versions turned on globally into the list they belong to.
+    pub fn migrate_community(&mut self) -> bool {
+        use crate::community::Category;
+
+        let mut additions: Vec<(&str, String)> = Vec::new();
+        if !self.community_seeded {
+            for preset in crate::presets::PRESETS {
+                additions.extend(preset.community.iter().map(|c| (preset.id, (*c).to_owned())));
+            }
+        }
+        for source in std::mem::take(&mut self.filters.legacy_community) {
+            let Some(found) = crate::community::find(&source) else { continue };
+            let list = match found.category {
+                Category::Adult | Category::Protection => "adult",
+                Category::Gambling => "gambling",
+                Category::Distractions => "social",
+                Category::Harmful => "harmful",
+            };
+            additions.push((list, source));
+        }
+
+        let mut changed = !self.community_seeded;
+        for (list_id, source) in additions {
+            if let Some(list) = self.lists.iter_mut().find(|l| l.id == list_id)
+                && !list.community.contains(&source)
+            {
+                list.community.push(source);
+                changed = true;
+            }
+        }
+        changed |= !self.community_seeded;
+        self.community_seeded = true;
         changed
     }
 
@@ -198,7 +241,8 @@ impl Status {
         };
         let removed_site = old.sites.iter().any(|s| !new.sites.contains(s));
         let removed_app = old.apps.iter().any(|a| !new.apps.contains(a));
-        if removed_site || removed_app {
+        let removed_source = old.community.iter().any(|c| !new.community.contains(c));
+        if removed_site || removed_app || removed_source {
             return Err(format!("“{}” is frozen: you can add to it, but not remove from it", old.name));
         }
         Ok(())
@@ -206,8 +250,7 @@ impl Status {
 
     /// While anything is locked, filters can be turned on but not off.
     pub fn check_filters_update(&self, new: &Filters) -> Result<(), String> {
-        let old = &self.state.filters;
-        let loosened = (old.safe_search && !new.safe_search) || old.community.iter().any(|c| !new.community.contains(c));
+        let loosened = self.state.filters.safe_search && !new.safe_search;
         if loosened && !self.locked_lists.is_empty() {
             return Err("Filters can’t be turned off while something is frozen".into());
         }
@@ -297,15 +340,29 @@ mod tests {
     }
 
     #[test]
-    fn filters_only_get_stricter_while_locked() {
+    fn safe_search_only_gets_stricter_while_locked() {
         let mut state = frozen_state();
-        state.filters = Filters { safe_search: true, community: vec!["stevenblack-porn".into()] };
-        let status = state.status(10);
-        assert!(status.check_filters_update(&Filters { safe_search: true, community: vec![] }).is_err());
-        assert!(status.check_filters_update(&Filters { safe_search: false, community: vec!["stevenblack-porn".into()] }).is_err());
-        let stricter = Filters { safe_search: true, community: vec!["stevenblack-porn".into(), "hagezi-nsfw".into()] };
-        assert!(status.check_filters_update(&stricter).is_ok());
+        state.filters.safe_search = true;
+        assert!(state.status(10).check_filters_update(&Filters::default()).is_err());
         assert!(state.status(100).check_filters_update(&Filters::default()).is_ok(), "unlocked again");
+    }
+
+    #[test]
+    fn migrates_community_lists_into_presets() {
+        // An install from before per-list community lists, with one turned on globally.
+        let mut state = State::default();
+        state.seed_presets();
+        for list in &mut state.lists {
+            list.community.clear();
+        }
+        state.community_seeded = false;
+        state.filters.legacy_community = vec!["hagezi-gambling".into()];
+
+        assert!(state.migrate_community());
+        assert!(state.list("adult").unwrap().community.contains(&"stevenblack-porn".to_owned()));
+        assert!(state.list("gambling").unwrap().community.contains(&"hagezi-gambling".to_owned()));
+        assert!(state.filters.legacy_community.is_empty());
+        assert!(!state.migrate_community(), "runs once");
     }
 
     #[test]

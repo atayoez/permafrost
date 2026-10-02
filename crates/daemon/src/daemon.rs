@@ -65,7 +65,7 @@ pub struct Daemon {
     last_clocks: Option<(i64, Duration)>,
 }
 
-type HostsKey = (Vec<BlockList>, Filters, u64, Vec<(IpAddr, String)>);
+type HostsKey = (Vec<BlockList>, u64, Vec<(IpAddr, String)>);
 
 fn now() -> i64 {
     chrono::Utc::now().timestamp()
@@ -82,7 +82,7 @@ impl Daemon {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => State::default(),
             Err(e) => return Err(e).context("reading state"),
         };
-        let seeded = state.seed_presets();
+        let seeded = state.seed_presets() | state.migrate_community();
         let daemon = Self {
             state,
             apps: AppEnforcer::default(),
@@ -111,7 +111,7 @@ impl Daemon {
     }
 
     fn wanted_community(&self) -> BTreeSet<String> {
-        self.state.filters.community.iter().cloned().collect()
+        self.state.lists.iter().flat_map(|l| l.community.iter().cloned()).collect()
     }
 
     pub fn status_json(&self) -> String {
@@ -134,6 +134,8 @@ impl Daemon {
         list.sites = sites;
         list.apps = list.apps.iter().map(|a| a.trim().trim_end_matches(".desktop").to_owned()).filter(|a| !a.is_empty()).collect();
         list.apps.dedup();
+        list.community.retain(|id| community::find(id).is_some());
+        list.community.dedup();
 
         self.status().check_list_update(&list).map_err(Error::Denied)?;
         if list.id.is_empty() {
@@ -188,10 +190,7 @@ impl Daemon {
     }
 
     pub fn set_filters(&mut self, json: &str) -> Result<()> {
-        let mut filters: Filters = serde_json::from_str(json).map_err(|e| Error::Invalid(e.to_string()))?;
-        filters.community.retain(|id| community::find(id).is_some());
-        filters.community.sort();
-        filters.community.dedup();
+        let filters: Filters = serde_json::from_str(json).map_err(|e| Error::Invalid(e.to_string()))?;
         self.status().check_filters_update(&filters).map_err(Error::Denied)?;
         self.state.filters = filters;
         self.commit()
@@ -269,8 +268,7 @@ impl Daemon {
     /// Called on shutdown. Locked blocks and always-on filters stay in place
     /// while the service is stopped.
     pub fn shutdown(&mut self) {
-        let filters = &self.state.filters;
-        if self.status().locked_lists.is_empty() && !filters.safe_search && filters.community.is_empty() {
+        if self.status().locked_lists.is_empty() && !self.state.filters.safe_search {
             self.write_hosts(String::new());
             self.hosts_key = None;
             browsers::set_doh_blocked(false, self.options.dry_run);
@@ -280,17 +278,16 @@ impl Daemon {
     fn enforce(&mut self, status: &Status) -> Vec<String> {
         let lists: Vec<BlockList> = status.active_lists.iter().filter_map(|id| self.state.list(id)).cloned().collect();
         let apps: BTreeSet<String> = lists.iter().flat_map(|l| l.apps.iter().cloned()).collect();
-        let filters = self.state.filters.clone();
-        let redirects = if filters.safe_search { self.safe_search.redirects().to_vec() } else { Vec::new() };
+        let redirects = if self.state.filters.safe_search { self.safe_search.redirects().to_vec() } else { Vec::new() };
 
-        let key = (lists, filters, self.community.generation(), redirects);
+        let key = (lists, self.community.generation(), redirects);
         if self.hosts_key.as_ref() != Some(&key) {
-            let (lists, filters, _, redirects) = &key;
+            let (lists, _, redirects) = &key;
             let sites: BTreeSet<String> =
                 lists.iter().flat_map(|l| l.sites.iter().flat_map(|s| domain::expand(s))).collect();
-            let community: BTreeSet<&str> = filters
-                .community
+            let community: BTreeSet<&str> = lists
                 .iter()
+                .flat_map(|l| l.community.iter())
                 .flat_map(|id| self.community.hosts(id))
                 .map(String::as_str)
                 .filter(|host| !sites.contains(*host))

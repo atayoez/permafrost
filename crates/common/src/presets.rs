@@ -8,6 +8,8 @@ pub struct Preset {
     pub description: &'static str,
     pub sites: &'static [&'static str],
     pub apps: &'static [&'static str],
+    /// Community blocklists (see `community::SOURCES`) to include.
+    pub community: &'static [&'static str],
 }
 
 impl Preset {
@@ -17,20 +19,7 @@ impl Preset {
             name: self.name.to_owned(),
             sites: self.sites.iter().map(|s| (*s).to_owned()).collect(),
             apps: self.apps.iter().map(|a| (*a).to_owned()).collect(),
-        }
-    }
-
-    /// Adds this preset's entries to an existing list, keeping what's there.
-    pub fn merge_into(&self, list: &mut BlockList) {
-        for site in self.sites {
-            if !list.sites.iter().any(|s| s == site) {
-                list.sites.push((*site).to_owned());
-            }
-        }
-        for app in self.apps {
-            if !list.apps.iter().any(|a| a == app) {
-                list.apps.push((*app).to_owned());
-            }
+            community: self.community.iter().map(|c| (*c).to_owned()).collect(),
         }
     }
 }
@@ -49,6 +38,7 @@ pub const PRESETS: &[Preset] = &[
             "snapchat.com", "linkedin.com", "pinterest.com", "threads.net", "threads.com",
             "bsky.app", "tumblr.com", "mastodon.social",
         ],
+        community: &["stevenblack-social"],
         apps: &[],
     },
     Preset {
@@ -59,6 +49,7 @@ pub const PRESETS: &[Preset] = &[
             "youtube.com", "youtu.be", "netflix.com", "twitch.tv", "primevideo.com",
             "disneyplus.com", "hulu.com", "max.com", "vimeo.com", "dailymotion.com", "kick.com",
         ],
+        community: &[],
         apps: &[],
     },
     Preset {
@@ -69,6 +60,7 @@ pub const PRESETS: &[Preset] = &[
             "news.google.com", "cnn.com", "bbc.com", "bbc.co.uk", "nytimes.com", "theguardian.com",
             "foxnews.com", "reuters.com", "washingtonpost.com", "news.ycombinator.com", "apnews.com",
         ],
+        community: &[],
         apps: &[],
     },
     Preset {
@@ -79,6 +71,7 @@ pub const PRESETS: &[Preset] = &[
             "amazon.com", "ebay.com", "aliexpress.com", "temu.com", "etsy.com", "walmart.com",
             "shein.com", "wish.com",
         ],
+        community: &[],
         apps: &[],
     },
     Preset {
@@ -89,6 +82,7 @@ pub const PRESETS: &[Preset] = &[
             "store.steampowered.com", "steamcommunity.com", "epicgames.com", "roblox.com",
             "chess.com", "lichess.org", "poki.com", "crazygames.com", "miniclip.com",
         ],
+        community: &[],
         apps: &[
             "com.valvesoftware.Steam", "steam", "com.heroicgameslauncher.hgl", "net.lutris.Lutris",
             "org.prismlauncher.PrismLauncher", "com.usebottles.bottles",
@@ -108,6 +102,15 @@ pub const PRESETS: &[Preset] = &[
             "stake.com", "stake.us", "roobet.com", "bc.game", "rollbit.com", "chumbacasino.com",
             "pulsz.com", "nesine.com", "bilyoner.com", "misli.com", "iddaa.com", "tuttur.com",
         ],
+        community: &["stevenblack-gambling", "hagezi-gambling", "hagezi-bypass"],
+        apps: &[],
+    },
+    Preset {
+        id: "harmful",
+        name: "Harmful Sites",
+        description: "Scams, fake shops, drugs, piracy and torrent sites",
+        sites: &[],
+        community: &["hagezi-fake", "blocklistproject-drugs", "hagezi-piracy", "blocklistproject-torrent"],
         apps: &[],
     },
     Preset {
@@ -123,6 +126,7 @@ pub const PRESETS: &[Preset] = &[
             "camsoda.com", "myfreecams.com", "rule34.xxx", "rule34.paheal.net", "e-hentai.org",
             "nhentai.net", "hanime.tv", "literotica.com",
         ],
+        community: &["stevenblack-porn", "hagezi-nsfw", "hagezi-bypass"],
         apps: &[],
     },
 ];
@@ -141,10 +145,11 @@ mod tests {
     }
 
     #[test]
-    fn merge_keeps_existing_entries() {
-        let mut list = BlockList { sites: vec!["example.org".into(), "reddit.com".into()], ..Default::default() };
-        find("social").unwrap().merge_into(&mut list);
-        assert_eq!(list.sites.iter().filter(|s| *s == "reddit.com").count(), 1);
-        assert!(list.sites.contains(&"example.org".to_owned()));
+    fn community_sources_exist() {
+        for preset in PRESETS {
+            for source in preset.community {
+                assert!(crate::community::find(source).is_some(), "{source} in {}", preset.id);
+            }
+        }
     }
 }
