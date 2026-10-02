@@ -3,6 +3,11 @@ using Adw 1;
 
 template $PermafrostListPage: Adw.Bin {
   child: Adw.PreferencesPage {
+    Adw.PreferencesGroup community_group {
+      title: _("Community Lists");
+      description: _("Large lists maintained by volunteers, updated weekly");
+    }
+
     Adw.PreferencesGroup sites_group {
       title: _("Websites");
       description: _("Common subdomains like www. and m. are blocked too");

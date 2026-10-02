@@ -1,7 +1,7 @@
 //! Turning times and durations into text.
 
 use chrono::{Local, TimeZone};
-use permafrost_common::model::Schedule;
+use permafrost_common::model::{BlockList, Schedule, Status};
 
 /// `47:12`, or `1:02:03` past an hour.
 pub fn countdown(seconds: i64) -> String {
@@ -57,8 +57,30 @@ pub fn schedule_summary(schedule: &Schedule, list_names: &[String]) -> String {
     parts.join(" · ")
 }
 
-pub fn list_summary(sites: usize, apps: usize) -> String {
-    let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+/// `76793` → `76,793`.
+pub fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Sites a list blocks, counting its community lists once they're downloaded.
+pub fn site_count(list: &BlockList, status: &Status) -> usize {
+    list.sites.len() + list.community.iter().filter_map(|c| status.community_sizes.get(c)).sum::<usize>()
+}
+
+pub fn list_summary(list: &BlockList, status: &Status) -> String {
+    counts(site_count(list, status), list.apps.len())
+}
+
+fn counts(sites: usize, apps: usize) -> String {
+    let plural = |n: usize, one: &str, many: &str| format!("{} {}", thousands(n), if n == 1 { one } else { many });
     match (sites, apps) {
         (0, 0) => "Empty".into(),
         (s, 0) => plural(s, "site", "sites"),
@@ -79,6 +101,8 @@ mod tests {
         assert_eq!(freeze_button(60), "Freeze for 1 Hour");
         assert_eq!(freeze_button(90), "Freeze for 1 h 30 min");
         assert_eq!(days(&[true, false, true, false, true, false, false]), "Mon, Wed, Fri");
-        assert_eq!(list_summary(5, 1), "5 sites · 1 app");
+        assert_eq!(counts(5, 1), "5 sites · 1 app");
+        assert_eq!(counts(76_828, 0), "76,828 sites");
+        assert_eq!(thousands(999), "999");
     }
 }

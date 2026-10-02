@@ -303,7 +303,7 @@ impl Window {
         match section {
             Section::List(id) => match status.state.list(&id) {
                 Some(list) => {
-                    imp.list_page.set_list(list, status.locked_lists.contains(&id));
+                    imp.list_page.set_list(list, &status);
                     imp.content_page.set_title(&list.name);
                 }
                 None => self.show_section(Section::Freeze),
@@ -398,7 +398,7 @@ impl Window {
             self.rebuild_new_list_menu(status);
         }
         for (label, list) in imp.count_labels.borrow().iter().zip(&status.state.lists) {
-            label.set_label(&(list.sites.len() + list.apps.len()).to_string());
+            label.set_label(&format::thousands(format::site_count(list, status) + list.apps.len()));
         }
     }
 
@@ -503,7 +503,7 @@ impl Window {
             }
             Section::List(id) => {
                 let Some(list) = status.state.list(id) else { return };
-                imp.list_page.set_list(list, status.locked_lists.contains(id));
+                imp.list_page.set_list(list, &status);
                 imp.stack.set_visible_child_name("list");
                 imp.content_page.set_title(&list.name);
             }

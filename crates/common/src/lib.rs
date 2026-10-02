@@ -1,5 +1,6 @@
 //! Types shared by the Permafrost app and its system service.
 
+pub mod community;
 pub mod dbus;
 pub mod domain;
 pub mod model;

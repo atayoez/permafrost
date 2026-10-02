@@ -1,6 +1,6 @@
 //! What Permafrost stores, and the rules for changing it while frozen.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Datelike, Local, TimeZone, Timelike};
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,9 @@ pub struct BlockList {
     /// Desktop app IDs without the `.desktop` suffix, e.g. `com.valvesoftware.Steam`.
     #[serde(default)]
     pub apps: Vec<String>,
+    /// Community blocklists (`community::SOURCES` ids) included in this list.
+    #[serde(default)]
+    pub community: Vec<String>,
     /// Force SafeSearch on Google, Bing, DuckDuckGo and YouTube while active.
     #[serde(default)]
     pub safe_search: bool,
@@ -108,6 +111,9 @@ pub struct Status {
     pub locked_until: Option<i64>,
     /// Schedules running now, which can't be edited if they're locked.
     pub running_schedules: BTreeSet<String>,
+    /// How many sites each downloaded community blocklist has.
+    #[serde(default)]
+    pub community_sizes: BTreeMap<String, usize>,
 }
 
 impl State {
@@ -185,7 +191,8 @@ impl Status {
         };
         let removed_site = old.sites.iter().any(|s| !new.sites.contains(s));
         let removed_app = old.apps.iter().any(|a| !new.apps.contains(a));
-        if removed_site || removed_app || (old.safe_search && !new.safe_search) {
+        let removed_source = old.community.iter().any(|c| !new.community.contains(c));
+        if removed_site || removed_app || removed_source || (old.safe_search && !new.safe_search) {
             return Err(format!("“{}” is frozen: you can add to it, but not remove from it", old.name));
         }
         Ok(())

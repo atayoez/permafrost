@@ -1,6 +1,7 @@
 //! The service's state and the rules for changing it.
 
 use std::collections::BTreeSet;
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -10,6 +11,7 @@ use permafrost_common::model::{BlockList, Freeze, Schedule, State, Status};
 use permafrost_common::domain;
 
 use crate::apps::AppEnforcer;
+use crate::community::Community;
 use crate::hosts;
 use crate::safesearch::SafeSearch;
 
@@ -51,11 +53,15 @@ pub struct Daemon {
     options: Options,
     apps: AppEnforcer,
     safe_search: SafeSearch,
-    applied_hosts: Option<String>,
+    community: Community,
+    /// What the hosts file was last written from, to skip rewriting it every tick.
+    hosts_key: Option<HostsKey>,
     last_active: BTreeSet<String>,
     /// Wall clock and boot clock at the last tick, to notice clock changes.
     last_clocks: Option<(i64, Duration)>,
 }
+
+type HostsKey = (Vec<BlockList>, u64, Vec<(IpAddr, String)>);
 
 fn now() -> i64 {
     chrono::Utc::now().timestamp()
@@ -75,12 +81,13 @@ impl Daemon {
         let seeded = state.seed_presets();
         let daemon = Self {
             state,
-            options,
             apps: AppEnforcer::default(),
             safe_search: SafeSearch::default(),
-            applied_hosts: None,
+            community: Community::new(options.state_file.with_file_name("community")),
+            hosts_key: None,
             last_active: BTreeSet::new(),
             last_clocks: None,
+            options,
         };
         if seeded {
             daemon.save()?;
@@ -89,7 +96,17 @@ impl Daemon {
     }
 
     pub fn status(&self) -> Status {
-        self.state.status(now())
+        self.status_at(now())
+    }
+
+    fn status_at(&self, now: i64) -> Status {
+        let mut status = self.state.status(now);
+        status.community_sizes = self.community.sizes();
+        status
+    }
+
+    fn wanted_community(&self) -> BTreeSet<String> {
+        self.state.lists.iter().flat_map(|l| l.community.iter().cloned()).collect()
     }
 
     pub fn status_json(&self) -> String {
@@ -217,8 +234,10 @@ impl Daemon {
         }
         self.last_clocks = Some((wall, boot));
         changed |= self.state.expire(wall);
+        let wanted = self.wanted_community();
+        changed |= self.community.refresh(&wanted);
 
-        let status = self.state.status(wall);
+        let status = self.status_at(wall);
         let closed_apps = self.enforce(&status);
         changed |= status.active_lists != self.last_active;
         self.last_active = status.active_lists.clone();
@@ -236,35 +255,51 @@ impl Daemon {
     pub fn shutdown(&mut self) {
         if self.status().locked_lists.is_empty() {
             self.write_hosts(String::new());
+            self.hosts_key = None;
         }
     }
 
     fn enforce(&mut self, status: &Status) -> Vec<String> {
-        let lists: Vec<&BlockList> = status.active_lists.iter().filter_map(|id| self.state.list(id)).collect();
-        let sites: BTreeSet<String> = lists.iter().flat_map(|l| l.sites.iter().flat_map(|s| domain::expand(s))).collect();
+        let lists: Vec<BlockList> = status.active_lists.iter().filter_map(|id| self.state.list(id)).cloned().collect();
         let apps: BTreeSet<String> = lists.iter().flat_map(|l| l.apps.iter().cloned()).collect();
         let safe_search = lists.iter().any(|l| l.safe_search);
-
         let redirects = if safe_search { self.safe_search.redirects().to_vec() } else { Vec::new() };
-        self.write_hosts(hosts::render(&sites, &redirects));
+
+        let key = (lists, self.community.generation(), redirects);
+        if self.hosts_key.as_ref() != Some(&key) {
+            let (lists, _, redirects) = &key;
+            let sites: BTreeSet<String> =
+                lists.iter().flat_map(|l| l.sites.iter().flat_map(|s| domain::expand(s))).collect();
+            let community: BTreeSet<&str> = lists
+                .iter()
+                .flat_map(|l| l.community.iter())
+                .flat_map(|id| self.community.hosts(id))
+                .map(String::as_str)
+                .filter(|host| !sites.contains(*host))
+                .collect();
+            let block = hosts::render(&sites, &community, redirects);
+            if self.write_hosts(block) {
+                self.hosts_key = Some(key);
+            }
+        }
         self.apps.enforce(&apps, self.options.dry_run)
     }
 
-    fn write_hosts(&mut self, block: String) {
-        if self.applied_hosts.as_ref() == Some(&block) {
-            return;
-        }
+    /// Returns whether the block is now in place.
+    fn write_hosts(&mut self, block: String) -> bool {
         if self.options.dry_run {
             tracing::info!("would write {} hosts lines", block.lines().count());
         } else if let Err(e) = hosts::write(&self.options.hosts_file, &block) {
             tracing::error!("couldn't update {}: {e}", self.options.hosts_file.display());
-            return;
+            return false;
         }
-        self.applied_hosts = Some(block);
+        true
     }
 
     fn commit(&mut self) -> Result<()> {
         self.save()?;
+        let wanted = self.wanted_community();
+        self.community.refresh(&wanted);
         let status = self.status();
         self.last_active = status.active_lists.clone();
         self.enforce(&status);

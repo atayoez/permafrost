@@ -1,10 +1,11 @@
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{gio, glib};
-use permafrost_common::model::BlockList;
-use permafrost_common::{domain, presets};
+use permafrost_common::model::{BlockList, Status};
+use permafrost_common::{community, domain, presets};
 
 use crate::app_picker;
 use crate::window::Window;
@@ -22,6 +23,8 @@ mod imp {
         #[template_child]
         pub site_entry: TemplateChild<adw::EntryRow>,
         #[template_child]
+        pub community_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
         pub apps_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub add_app_row: TemplateChild<adw::ButtonRow>,
@@ -29,7 +32,9 @@ mod imp {
         pub safe_search_row: TemplateChild<adw::SwitchRow>,
 
         pub list: RefCell<Option<BlockList>>,
+        pub sizes: RefCell<BTreeMap<String, usize>>,
         pub locked: Cell<bool>,
+        pub community_rows: RefCell<Vec<(String, adw::SwitchRow)>>,
         pub rows: RefCell<Vec<(adw::PreferencesGroup, adw::ActionRow)>>,
         /// Set while the page fills in its widgets, so that isn't saved back.
         pub loading: Cell<bool>,
@@ -125,6 +130,31 @@ impl ListPage {
             }
         ));
 
+        let mut rows = Vec::new();
+        for source in community::SOURCES {
+            let row = adw::SwitchRow::builder().title(source.name).build();
+            let id = source.id;
+            row.connect_active_notify(glib::clone!(
+                #[weak(rename_to = page)]
+                self,
+                move |row| {
+                    if page.imp().loading.get() {
+                        return;
+                    }
+                    let on = row.is_active();
+                    page.edit(|list| {
+                        list.community.retain(|c| c != id);
+                        if on {
+                            list.community.push(id.to_owned());
+                        }
+                    });
+                }
+            ));
+            imp.community_group.add(&row);
+            rows.push((source.id.to_owned(), row));
+        }
+        imp.community_rows.replace(rows);
+
         imp.safe_search_row.connect_active_notify(glib::clone!(
             #[weak(rename_to = page)]
             self,
@@ -150,14 +180,31 @@ impl ListPage {
         }
     }
 
-    pub fn set_list(&self, list: &BlockList, locked: bool) {
+    pub fn set_list(&self, list: &BlockList, status: &Status) {
         let imp = self.imp();
-        if imp.list.borrow().as_ref() == Some(list) && imp.locked.get() == locked {
+        let locked = status.locked_lists.contains(&list.id);
+        if imp.list.borrow().as_ref() == Some(list)
+            && imp.locked.get() == locked
+            && *imp.sizes.borrow() == status.community_sizes
+        {
             return;
         }
         imp.loading.set(true);
         imp.list.replace(Some(list.clone()));
+        imp.sizes.replace(status.community_sizes.clone());
         imp.locked.set(locked);
+
+        for (id, row) in imp.community_rows.borrow().iter() {
+            let on = list.community.contains(id);
+            row.set_active(on);
+            row.set_sensitive(!(locked && on));
+            let source = community::find(id).expect("rows come from SOURCES");
+            row.set_subtitle(&match status.community_sizes.get(id) {
+                Some(n) => format!("{} sites from StevenBlack/hosts", crate::format::thousands(*n)),
+                None if on => "Downloading…".to_owned(),
+                None => format!("From {}", source.homepage.trim_start_matches("https://")),
+            });
+        }
 
         for (group, row) in imp.rows.take() {
             group.remove(&row);

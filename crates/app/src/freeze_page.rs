@@ -199,7 +199,7 @@ impl FreezePage {
         for list in freeze.lists.iter().filter_map(|id| status.state.list(id)) {
             let row = adw::ActionRow::builder()
                 .title(&list.name)
-                .subtitle(format::list_summary(list.sites.len(), list.apps.len()))
+                .subtitle(format::list_summary(list, status))
                 .build();
             row.add_prefix(&gtk::Image::from_icon_name("security-high-symbolic"));
             imp.active_group.add(&row);
@@ -219,7 +219,7 @@ impl FreezePage {
         };
         if same {
             for ((_, row), list) in imp.list_rows.borrow().iter().zip(&status.state.lists) {
-                row.set_subtitle(&format::list_summary(list.sites.len(), list.apps.len()));
+                row.set_subtitle(&format::list_summary(list, status));
             }
             return;
         }
@@ -238,7 +238,7 @@ impl FreezePage {
             }
             let row = adw::SwitchRow::builder()
                 .title(&list.name)
-                .subtitle(format::list_summary(list.sites.len(), list.apps.len()))
+                .subtitle(format::list_summary(list, status))
                 .active(!imp.unchecked.borrow().contains(&list.id))
                 .build();
             let id = list.id.clone();

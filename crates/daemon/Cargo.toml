@@ -16,4 +16,5 @@ zbus.workspace = true
 nix = { version = "0.31.3", features = ["signal", "time"] }
 tokio = { version = "1.53.1", features = ["macros", "rt", "signal", "time"] }
 tracing = "0.1.44"
+ureq = "3.4.2"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
