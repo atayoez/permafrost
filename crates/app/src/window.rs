@@ -6,7 +6,6 @@ use adw::subclass::prelude::*;
 use futures_util::StreamExt;
 use gtk::{gio, glib};
 use permafrost_common::model::{BlockList, Schedule, Status};
-use permafrost_common::presets::{self, Preset};
 
 use crate::client::Client;
 use crate::format;
@@ -123,9 +122,9 @@ mod imp {
                 }
             });
             klass.install_action("win.delete-list", None, |win, _, _| win.confirm_delete_list());
-            klass.install_action("win.add-preset-list", Some(glib::VariantTy::STRING), |win, _, param| {
-                if let Some(preset) = param.and_then(|p| p.get::<String>()).and_then(|id| presets::find(&id)) {
-                    win.add_preset_list(preset);
+            klass.install_action("win.preferences", None, |win, _, _| {
+                if let Some(status) = win.status() {
+                    crate::preferences::present(win, &status);
                 }
             });
             klass.install_action("win.reconnect", None, |win, _, _| win.connect_service());
@@ -209,6 +208,10 @@ impl Window {
                     match std::env::var("PERMAFROST_SECTION").as_deref() {
                         Ok("schedules") => win.show_section(Section::Schedules),
                         Ok("filters") => win.show_section(Section::Filters),
+                        Ok("custom") => win.imp().freeze_page.show_custom_duration(),
+                        Ok("settings") => {
+                            let _ = WidgetExt::activate_action(&win, "win.preferences", None);
+                        }
                         Ok(s) if s.starts_with("list:") => win.show_section(Section::List(s[5..].to_owned())),
                         _ => {}
                     }
@@ -481,19 +484,6 @@ impl Window {
         let current = imp.section.borrow().clone();
         imp.sidebar.set_selected(index_of(&current));
         imp.rebuilding.set(false);
-    }
-
-    fn add_preset_list(&self, preset: &'static Preset) {
-        let weak = self.downgrade();
-        self.spawn(move |client| async move {
-            let id = client.save_list(&preset.to_list(preset.id.to_owned())).await?;
-            let status = client.status().await?;
-            if let Some(win) = weak.upgrade() {
-                win.apply_status(status);
-                win.show_section(Section::List(id));
-            }
-            Ok(())
-        });
     }
 
     fn on_sidebar_selected(&self, index: u32, activated: bool) {

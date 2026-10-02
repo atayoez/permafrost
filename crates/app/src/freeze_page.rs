@@ -27,15 +27,17 @@ mod imp {
         #[template_child]
         pub custom_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
-        pub hours_row: TemplateChild<adw::SpinRow>,
+        pub hours_spin: TemplateChild<gtk::SpinButton>,
         #[template_child]
-        pub minutes_row: TemplateChild<adw::SpinRow>,
+        pub minutes_spin: TemplateChild<gtk::SpinButton>,
         #[template_child]
         pub lists_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
-        pub lock_row: TemplateChild<adw::SwitchRow>,
-        #[template_child]
         pub freeze_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub lock_hint: TemplateChild<gtk::Label>,
+        /// The lock setting new freezes use, from Settings.
+        pub lock_freezes: Cell<bool>,
         #[template_child]
         pub ring: TemplateChild<CountdownRing>,
         #[template_child]
@@ -107,11 +109,25 @@ impl FreezePage {
             let refresh = refresh.clone();
             move |_| refresh()
         });
-        imp.hours_row.connect_value_notify({
+        imp.hours_spin.connect_value_changed({
             let refresh = refresh.clone();
             move |_| refresh()
         });
-        imp.minutes_row.connect_value_notify(move |_| refresh());
+        imp.minutes_spin.connect_value_changed(move |_| refresh());
+        imp.minutes_spin.connect_output(|spin| {
+            spin.set_text(&format!("{:02}", spin.value() as u32));
+            glib::Propagation::Stop
+        });
+        // Stepping minutes past :55 or below :00 carries into the hours.
+        imp.minutes_spin.connect_wrapped(glib::clone!(
+            #[weak(rename_to = page)]
+            self,
+            move |minutes| {
+                let hours = &page.imp().hours_spin;
+                let delta = if minutes.value() < 30.0 { 1.0 } else { -1.0 };
+                hours.set_value(hours.value() + delta);
+            }
+        ));
 
         imp.freeze_button.connect_clicked(glib::clone!(
             #[weak(rename_to = page)]
@@ -139,6 +155,11 @@ impl FreezePage {
         self.update_freeze_button();
     }
 
+    #[cfg(debug_assertions)]
+    pub fn show_custom_duration(&self) {
+        self.imp().duration_group.set_active_name(Some("custom"));
+    }
+
     fn window(&self) -> Option<Window> {
         self.root().and_downcast()
     }
@@ -146,7 +167,7 @@ impl FreezePage {
     fn minutes(&self) -> u32 {
         let imp = self.imp();
         match imp.duration_group.active_name().as_deref() {
-            Some("custom") | None => (imp.hours_row.value() as u32) * 60 + imp.minutes_row.value() as u32,
+            Some("custom") | None => (imp.hours_spin.value() as u32) * 60 + imp.minutes_spin.value() as u32,
             Some(minutes) => minutes.parse().unwrap_or(60),
         }
     }
@@ -159,7 +180,6 @@ impl FreezePage {
         let imp = self.imp();
         imp.custom_group.set_visible(imp.duration_group.active_name().as_deref() == Some("custom"));
         let minutes = self.minutes();
-        imp.freeze_button.set_label(&format::freeze_button(minutes.max(1)));
         imp.freeze_button.set_sensitive(minutes >= 1 && !self.selected_lists().is_empty());
     }
 
@@ -167,7 +187,7 @@ impl FreezePage {
         let imp = self.imp();
         let lists = self.selected_lists();
         let seconds = u64::from(self.minutes()) * 60;
-        let locked = imp.lock_row.is_active();
+        let locked = imp.lock_freezes.get();
         if let Some(win) = self.window() {
             win.spawn(move |client| async move { client.start_freeze(&lists, seconds, locked).await });
         }
@@ -175,6 +195,13 @@ impl FreezePage {
 
     pub fn set_status(&self, status: &Status) {
         let imp = self.imp();
+        let lock = status.state.settings.lock_freezes;
+        imp.lock_freezes.set(lock);
+        imp.lock_hint.set_label(if lock {
+            "Can’t be stopped until the timer ends · Change this in Settings"
+        } else {
+            "Can be stopped anytime · Change this in Settings"
+        });
         self.rebuild_list_rows(status);
 
         let freeze = status.state.freeze.as_ref().filter(|f| f.ends_at > status.now);

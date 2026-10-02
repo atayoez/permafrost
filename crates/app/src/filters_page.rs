@@ -1,10 +1,9 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::glib;
-use permafrost_common::model::{Filters, Status};
-use permafrost_common::presets;
+use permafrost_common::model::Status;
 
 use crate::format;
 use crate::window::{Section, Window};
@@ -16,21 +15,11 @@ mod imp {
     #[template(resource = "/io/github/atayoez/Permafrost/ui/filters-page.ui")]
     pub struct FiltersPage {
         #[template_child]
-        pub page: TemplateChild<adw::PreferencesPage>,
-        #[template_child]
-        pub safe_search_row: TemplateChild<adw::SwitchRow>,
-        #[template_child]
         pub lists_group: TemplateChild<adw::PreferencesGroup>,
-        #[template_child]
-        pub preset_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub add_row: TemplateChild<adw::ButtonRow>,
 
         pub list_rows: RefCell<Vec<adw::ActionRow>>,
-
-        pub filters: RefCell<Filters>,
-        /// Set while the page fills in its widgets, so that isn't saved back.
-        pub loading: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -48,12 +37,7 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for FiltersPage {
-        fn constructed(&self) {
-            self.parent_constructed();
-            self.obj().setup();
-        }
-    }
+    impl ObjectImpl for FiltersPage {}
 
     impl WidgetImpl for FiltersPage {}
     impl BinImpl for FiltersPage {}
@@ -66,21 +50,9 @@ glib::wrapper! {
 }
 
 impl FiltersPage {
-    fn setup(&self) {
-        let imp = self.imp();
-        imp.safe_search_row.connect_active_notify(glib::clone!(
-            #[weak(rename_to = page)]
-            self,
-            move |row| {
-                let on = row.is_active();
-                page.edit(|filters| filters.safe_search = on);
-            }
-        ));
-    }
-
     /// Your filters as rows that open the full list; choosing what to block
     /// happens on the Freeze page.
-    fn update_lists(&self, status: &Status) {
+    pub fn set_status(&self, status: &Status) {
         let imp = self.imp();
         for row in imp.list_rows.take() {
             imp.lists_group.remove(&row);
@@ -112,45 +84,9 @@ impl FiltersPage {
         }
         imp.lists_group.add(&*imp.add_row);
         imp.list_rows.replace(rows);
-
-        let menu = gtk::gio::Menu::new();
-        for preset in presets::PRESETS.iter().filter(|p| status.state.list(p.id).is_none()) {
-            let item = gtk::gio::MenuItem::new(Some(preset.name), None);
-            item.set_action_and_target_value(Some("win.add-preset-list"), Some(&preset.id.to_variant()));
-            menu.append_item(&item);
-        }
-        imp.preset_button.set_visible(menu.n_items() > 0);
-        imp.preset_button.set_menu_model(Some(&menu));
     }
 
     fn window(&self) -> Option<Window> {
         self.root().and_downcast()
-    }
-
-    /// Changes the filters and saves them. The service sends the result back.
-    fn edit(&self, change: impl FnOnce(&mut Filters)) {
-        if self.imp().loading.get() {
-            return;
-        }
-        let mut filters = self.imp().filters.borrow().clone();
-        change(&mut filters);
-        if let Some(win) = self.window() {
-            win.spawn(move |client| async move { client.set_filters(&filters).await });
-        }
-    }
-
-    pub fn set_status(&self, status: &Status) {
-        self.update_lists(status);
-        let imp = self.imp();
-        let filters = &status.state.filters;
-        // While locked, filters can be turned on but not off.
-        let locked = !status.locked_lists.is_empty();
-        imp.loading.set(true);
-        imp.filters.replace(filters.clone());
-
-        imp.safe_search_row.set_active(filters.safe_search);
-        imp.safe_search_row.set_sensitive(!(locked && filters.safe_search));
-
-        imp.loading.set(false);
     }
 }

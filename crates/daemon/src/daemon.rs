@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::Context;
 use nix::time::{ClockId, clock_gettime};
 use permafrost_common::community;
-use permafrost_common::model::{BlockList, Filters, Freeze, Schedule, State, Status};
+use permafrost_common::model::{BlockList, Freeze, Schedule, Settings, State, Status};
 use permafrost_common::domain;
 
 use crate::apps::AppEnforcer;
@@ -189,10 +189,16 @@ impl Daemon {
         self.commit()
     }
 
-    pub fn set_filters(&mut self, json: &str) -> Result<()> {
-        let filters: Filters = serde_json::from_str(json).map_err(|e| Error::Invalid(e.to_string()))?;
-        self.status().check_filters_update(&filters).map_err(Error::Denied)?;
-        self.state.filters = filters;
+    pub fn set_settings(&mut self, json: &str) -> Result<()> {
+        let settings: Settings = serde_json::from_str(json).map_err(|e| Error::Invalid(e.to_string()))?;
+        self.status().check_settings_update(&settings).map_err(Error::Denied)?;
+        self.state.settings = settings;
+        self.commit()
+    }
+
+    pub fn restore_defaults(&mut self) -> Result<()> {
+        self.status().can_restore_defaults().map_err(Error::Denied)?;
+        self.state.restore_defaults();
         self.commit()
     }
 
@@ -265,10 +271,10 @@ impl Daemon {
         }
     }
 
-    /// Called on shutdown. Locked blocks and always-on filters stay in place
+    /// Called on shutdown. Locked blocks and SafeSearch stay in place
     /// while the service is stopped.
     pub fn shutdown(&mut self) {
-        if self.status().locked_lists.is_empty() && !self.state.filters.safe_search {
+        if self.status().locked_lists.is_empty() && !self.state.settings.safe_search {
             self.write_hosts(String::new());
             self.hosts_key = None;
             browsers::set_doh_blocked(false, self.options.dry_run);
@@ -278,7 +284,7 @@ impl Daemon {
     fn enforce(&mut self, status: &Status) -> Vec<String> {
         let lists: Vec<BlockList> = status.active_lists.iter().filter_map(|id| self.state.list(id)).cloned().collect();
         let apps: BTreeSet<String> = lists.iter().flat_map(|l| l.apps.iter().cloned()).collect();
-        let redirects = if self.state.filters.safe_search { self.safe_search.redirects().to_vec() } else { Vec::new() };
+        let redirects = if self.state.settings.safe_search { self.safe_search.redirects().to_vec() } else { Vec::new() };
 
         let key = (lists, self.community.generation(), redirects);
         if self.hosts_key.as_ref() != Some(&key) {

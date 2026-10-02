@@ -3,3 +3,14 @@
   font-weight: 800;
   font-feature-settings: "tnum";
 }
+
+.time-picker > text,
+.time-picker-separator {
+  font-size: 300%;
+  font-weight: 800;
+  font-feature-settings: "tnum";
+}
+
+.time-picker > text {
+  min-width: 2.2em;
+}

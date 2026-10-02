@@ -22,6 +22,7 @@ pub fn run() -> glib::ExitCode {
         app.set_accels_for_action("app.quit", &["<Control>q"]);
         app.set_accels_for_action("app.shortcuts", &["<Control>question"]);
         app.set_accels_for_action("win.new-list", &["<Control>n"]);
+        app.set_accels_for_action("win.preferences", &["<Control>comma"]);
         app.set_accels_for_action("window.close", &["<Control>w"]);
     });
 
@@ -58,6 +59,7 @@ fn setup_actions(app: &adw::Application) {
             let section = adw::ShortcutsSection::new(None);
             for (title, accel) in [
                 ("New Custom Filter", "<Control>n"),
+                ("Settings", "<Control>comma"),
                 ("Keyboard Shortcuts", "<Control>question"),
                 ("Close Window", "<Control>w"),
                 ("Quit", "<Control>q"),

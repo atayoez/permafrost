@@ -26,15 +26,6 @@ pub fn minutes_of_day(minutes: u16) -> String {
     format!("{:02}:{:02}", minutes / 60, minutes % 60)
 }
 
-pub fn freeze_button(minutes: u32) -> String {
-    match (minutes / 60, minutes % 60) {
-        (0, m) => format!("Freeze for {m} Minutes"),
-        (1, 0) => "Freeze for 1 Hour".into(),
-        (h, 0) => format!("Freeze for {h} Hours"),
-        (h, m) => format!("Freeze for {h} h {m} min"),
-    }
-}
-
 pub fn days(days: &[bool; 7]) -> String {
     const NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     match days {
@@ -97,9 +88,6 @@ mod tests {
     fn formats() {
         assert_eq!(countdown(47 * 60 + 12), "47:12");
         assert_eq!(countdown(3723), "1:02:03");
-        assert_eq!(freeze_button(25), "Freeze for 25 Minutes");
-        assert_eq!(freeze_button(60), "Freeze for 1 Hour");
-        assert_eq!(freeze_button(90), "Freeze for 1 h 30 min");
         assert_eq!(days(&[true, false, true, false, true, false, false]), "Mon, Wed, Fri");
         assert_eq!(counts(5, 1), "5 sites · 1 app");
         assert_eq!(counts(76_828, 0), "76,828 sites");

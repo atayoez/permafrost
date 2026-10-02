@@ -6,6 +6,7 @@ mod filters_page;
 mod format;
 mod freeze_page;
 mod list_page;
+mod preferences;
 mod ring;
 mod schedule_dialog;
 mod schedules_page;

@@ -69,8 +69,12 @@ impl Service {
         self.change(&emitter, |d| d.delete_schedule(id)).await
     }
 
-    async fn set_filters(&self, filters: &str, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> fdo::Result<()> {
-        self.change(&emitter, |d| d.set_filters(filters)).await
+    async fn set_settings(&self, settings: &str, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> fdo::Result<()> {
+        self.change(&emitter, |d| d.set_settings(settings)).await
+    }
+
+    async fn restore_defaults(&self, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> fdo::Result<()> {
+        self.change(&emitter, |d| d.restore_defaults()).await
     }
 
     async fn start_freeze(

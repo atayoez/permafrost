@@ -1,7 +1,7 @@
 //! Talking to permafrostd.
 
 use permafrost_common::dbus::PermafrostProxy;
-use permafrost_common::model::{BlockList, Filters, Schedule, Status};
+use permafrost_common::model::{BlockList, Schedule, Settings, Status};
 
 pub type Result<T> = std::result::Result<T, String>;
 
@@ -60,9 +60,13 @@ impl Client {
         self.proxy.delete_schedule(id).await.map_err(message)
     }
 
-    pub async fn set_filters(&self, filters: &Filters) -> Result<()> {
-        let json = serde_json::to_string(filters).map_err(|e| e.to_string())?;
-        self.proxy.set_filters(&json).await.map_err(message)
+    pub async fn set_settings(&self, settings: &Settings) -> Result<()> {
+        let json = serde_json::to_string(settings).map_err(|e| e.to_string())?;
+        self.proxy.set_settings(&json).await.map_err(message)
+    }
+
+    pub async fn restore_defaults(&self) -> Result<()> {
+        self.proxy.restore_defaults().await.map_err(message)
     }
 
     pub async fn start_freeze(&self, lists: &[String], seconds: u64, locked: bool) -> Result<()> {

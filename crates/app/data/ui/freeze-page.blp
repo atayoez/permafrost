@@ -79,46 +79,84 @@ template $PermafrostFreezePage: Adw.Bin {
         Adw.PreferencesGroup custom_group {
           visible: false;
 
-          Adw.SpinRow hours_row {
-            title: _("Hours");
-
-            adjustment: Adjustment {
-              lower: 0;
-              upper: 167;
-              step-increment: 1;
-              value: 1;
-            };
-          }
-
-          Adw.SpinRow minutes_row {
-            title: _("Minutes");
-            wrap: true;
-
-            adjustment: Adjustment {
-              lower: 0;
-              upper: 55;
-              step-increment: 5;
-              value: 30;
-            };
-          }
-        }
-
-        Adw.PreferencesGroup {
-          Adw.SwitchRow lock_row {
-            title: _("Lock Until the Timer Ends");
-            subtitle: _("You won’t be able to unfreeze early");
-            active: true;
-          }
-        }
-
-        Adw.PreferencesGroup {
-          Button freeze_button {
+          Box {
             halign: center;
+            spacing: 6;
 
-            styles [
-              "suggested-action",
-              "pill",
-            ]
+            SpinButton hours_spin {
+              orientation: vertical;
+              numeric: true;
+              width-chars: 2;
+              tooltip-text: _("Hours");
+
+              adjustment: Adjustment {
+                lower: 0;
+                upper: 167;
+                step-increment: 1;
+                page-increment: 4;
+                value: 1;
+              };
+
+              styles [
+                "time-picker",
+              ]
+            }
+
+            Label {
+              label: ":";
+
+              styles [
+                "time-picker-separator",
+              ]
+            }
+
+            SpinButton minutes_spin {
+              orientation: vertical;
+              numeric: true;
+              wrap: true;
+              width-chars: 2;
+              tooltip-text: _("Minutes");
+
+              adjustment: Adjustment {
+                lower: 0;
+                upper: 59;
+                step-increment: 5;
+                page-increment: 15;
+                value: 30;
+              };
+
+              styles [
+                "time-picker",
+              ]
+            }
+          }
+        }
+
+        Adw.PreferencesGroup {
+          Box {
+            orientation: vertical;
+            spacing: 8;
+
+            Button freeze_button {
+              label: _("Freeze _Now");
+              use-underline: true;
+              halign: center;
+
+              styles [
+                "suggested-action",
+                "pill",
+              ]
+            }
+
+            Label lock_hint {
+              wrap: true;
+              justify: center;
+
+              styles [
+                "dimmed",
+                "caption",
+              ]
+            }
           }
         }
 

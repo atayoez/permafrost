@@ -20,16 +20,29 @@ pub struct BlockList {
     pub community: Vec<String>,
 }
 
-/// Always-on filters, set in one place rather than per block list.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Filters {
-    /// Force SafeSearch on Google, Bing, DuckDuckGo and YouTube.
+/// App-wide settings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Settings {
+    /// Force SafeSearch on Google, Bing, DuckDuckGo and YouTube, all the time.
     #[serde(default)]
     pub safe_search: bool,
+    /// Whether new freezes can't be stopped before their timer ends.
+    #[serde(default = "default_true")]
+    pub lock_freezes: bool,
     /// Community lists from versions that turned them on globally; moved
     /// into block lists by `State::migrate_community`.
     #[serde(default, rename = "community", skip_serializing_if = "Vec::is_empty")]
     pub legacy_community: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { safe_search: false, lock_freezes: true, legacy_community: Vec::new() }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,8 +116,8 @@ pub struct State {
     pub schedules: Vec<Schedule>,
     #[serde(default)]
     pub freeze: Option<Freeze>,
-    #[serde(default)]
-    pub filters: Filters,
+    #[serde(default, alias = "filters")]
+    pub settings: Settings,
     /// Presets already added once, so deleting one doesn't bring it back.
     #[serde(default)]
     pub seeded_presets: Vec<String>,
@@ -166,7 +179,7 @@ impl State {
                 additions.extend(preset.community.iter().map(|c| (preset.id, (*c).to_owned())));
             }
         }
-        for source in std::mem::take(&mut self.filters.legacy_community) {
+        for source in std::mem::take(&mut self.settings.legacy_community) {
             let Some(found) = crate::community::find(&source) else { continue };
             let list = match found.category {
                 Category::Adult | Category::Protection => "adult",
@@ -189,6 +202,22 @@ impl State {
         changed |= !self.community_seeded;
         self.community_seeded = true;
         changed
+    }
+
+    /// Resets the preset filters to their original contents, bringing back
+    /// deleted ones, and resets settings. Custom filters and schedules stay.
+    pub fn restore_defaults(&mut self) {
+        for preset in crate::presets::PRESETS {
+            let fresh = preset.to_list(preset.id.to_owned());
+            match self.lists.iter_mut().find(|l| l.id == preset.id) {
+                Some(list) => *list = fresh,
+                None => self.lists.push(fresh),
+            }
+            if !self.seeded_presets.iter().any(|id| id == preset.id) {
+                self.seeded_presets.push(preset.id.to_owned());
+            }
+        }
+        self.settings = Settings::default();
     }
 
     /// Ends an expired freeze. Returns whether anything changed.
@@ -248,11 +277,18 @@ impl Status {
         Ok(())
     }
 
-    /// While anything is locked, filters can be turned on but not off.
-    pub fn check_filters_update(&self, new: &Filters) -> Result<(), String> {
-        let loosened = self.state.filters.safe_search && !new.safe_search;
+    /// While anything is locked, SafeSearch can be turned on but not off.
+    pub fn check_settings_update(&self, new: &Settings) -> Result<(), String> {
+        let loosened = self.state.settings.safe_search && !new.safe_search;
         if loosened && !self.locked_lists.is_empty() {
-            return Err("Filters can’t be turned off while something is frozen".into());
+            return Err("SafeSearch can’t be turned off while something is frozen".into());
+        }
+        Ok(())
+    }
+
+    pub fn can_restore_defaults(&self) -> Result<(), String> {
+        if !self.locked_lists.is_empty() {
+            return Err("Defaults can’t be restored while something is frozen".into());
         }
         Ok(())
     }
@@ -342,9 +378,10 @@ mod tests {
     #[test]
     fn safe_search_only_gets_stricter_while_locked() {
         let mut state = frozen_state();
-        state.filters.safe_search = true;
-        assert!(state.status(10).check_filters_update(&Filters::default()).is_err());
-        assert!(state.status(100).check_filters_update(&Filters::default()).is_ok(), "unlocked again");
+        state.settings.safe_search = true;
+        assert!(state.status(10).check_settings_update(&Settings::default()).is_err());
+        assert!(state.status(10).can_restore_defaults().is_err());
+        assert!(state.status(100).check_settings_update(&Settings::default()).is_ok(), "unlocked again");
     }
 
     #[test]
@@ -356,13 +393,35 @@ mod tests {
             list.community.clear();
         }
         state.community_seeded = false;
-        state.filters.legacy_community = vec!["hagezi-gambling".into()];
+        state.settings.legacy_community = vec!["hagezi-gambling".into()];
 
         assert!(state.migrate_community());
         assert!(state.list("adult").unwrap().community.contains(&"stevenblack-porn".to_owned()));
         assert!(state.list("gambling").unwrap().community.contains(&"hagezi-gambling".to_owned()));
-        assert!(state.filters.legacy_community.is_empty());
+        assert!(state.settings.legacy_community.is_empty());
         assert!(!state.migrate_community(), "runs once");
+    }
+
+    #[test]
+    fn restore_defaults_keeps_custom_filters() {
+        let mut state = State::default();
+        state.seed_presets();
+        state.lists.retain(|l| l.id != "video");
+        state.lists[0].sites.clear();
+        state.lists.push(BlockList { id: "mine".into(), name: "Mine".into(), ..Default::default() });
+        state.settings.safe_search = true;
+        state.restore_defaults();
+        assert!(state.list("video").is_some());
+        assert!(!state.lists[0].sites.is_empty());
+        assert!(state.list("mine").is_some());
+        assert_eq!(state.settings, Settings::default());
+    }
+
+    #[test]
+    fn reads_old_filters_key() {
+        let state: State = serde_json::from_str(r#"{"filters":{"safe_search":true}}"#).unwrap();
+        assert!(state.settings.safe_search);
+        assert!(state.settings.lock_freezes);
     }
 
     #[test]
