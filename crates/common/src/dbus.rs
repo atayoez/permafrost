@@ -30,15 +30,8 @@ pub trait Permafrost {
     /// Resets preset filters and settings; custom filters and schedules stay.
     fn restore_defaults(&self) -> zbus::Result<()>;
 
-    /// `work_minutes` and `break_minutes` of 0 mean no breaks.
-    fn start_freeze(
-        &self,
-        lists: &[&str],
-        seconds: u64,
-        locked: bool,
-        work_minutes: u32,
-        break_minutes: u32,
-    ) -> zbus::Result<()>;
+    /// `breaks` is a `Breaks` (JSON) for Pomodoro cycles, or empty for none.
+    fn start_freeze(&self, lists: &[&str], seconds: u64, locked: bool, breaks: &str) -> zbus::Result<()>;
 
     fn add_time(&self, seconds: u64) -> zbus::Result<()>;
 

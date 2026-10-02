@@ -11,13 +11,8 @@ use crate::format;
 use crate::ring::CountdownRing;
 use crate::window::Window;
 
-/// The choices in the Breaks row, in order.
-const BREAKS: [Option<Breaks>; 4] = [
-    None,
-    Some(Breaks { work_minutes: 25, break_minutes: 5 }),
-    Some(Breaks { work_minutes: 50, break_minutes: 10 }),
-    Some(Breaks { work_minutes: 90, break_minutes: 15 }),
-];
+/// Rounds before each long Pomodoro break.
+const LONG_BREAK_EVERY: u32 = 4;
 
 /// A filter on the Freeze page: a row to preview it and a switch to block it.
 pub struct ListRow {
@@ -52,7 +47,19 @@ mod imp {
         #[template_child]
         pub lock_hint: TemplateChild<gtk::Label>,
         #[template_child]
-        pub breaks_row: TemplateChild<adw::ComboRow>,
+        pub mode_group: TemplateChild<adw::ToggleGroup>,
+        #[template_child]
+        pub timer_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub pomodoro_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub rounds_row: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub focus_row: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub short_break_row: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub long_break_row: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub phase_label: TemplateChild<gtk::Label>,
         /// The current freeze, for showing its break phase every second.
@@ -134,7 +141,18 @@ impl FreezePage {
             let refresh = refresh.clone();
             move |_| refresh()
         });
-        imp.minutes_spin.connect_value_changed(move |_| refresh());
+        imp.minutes_spin.connect_value_changed({
+            let refresh = refresh.clone();
+            move |_| refresh()
+        });
+        imp.mode_group.connect_active_name_notify({
+            let refresh = refresh.clone();
+            move |_| refresh()
+        });
+        for row in [&*imp.rounds_row, &*imp.focus_row, &*imp.short_break_row, &*imp.long_break_row] {
+            let refresh = refresh.clone();
+            row.connect_value_notify(move |_| refresh());
+        }
         imp.minutes_spin.connect_output(|spin| {
             spin.set_text(&format!("{:02}", spin.value() as u32));
             glib::Propagation::Stop
@@ -181,6 +199,11 @@ impl FreezePage {
         self.imp().duration_group.set_active_name(Some("custom"));
     }
 
+    #[cfg(debug_assertions)]
+    pub fn show_pomodoro(&self) {
+        self.imp().mode_group.set_active_name(Some("pomodoro"));
+    }
+
     fn preview(&self, id: &str) {
         let Some(win) = self.window() else { return };
         let Some(status) = win.status() else { return };
@@ -191,6 +214,24 @@ impl FreezePage {
 
     fn window(&self) -> Option<Window> {
         self.root().and_downcast()
+    }
+
+    fn pomodoro(&self) -> Option<Breaks> {
+        let imp = self.imp();
+        (imp.mode_group.active_name().as_deref() == Some("pomodoro")).then(|| Breaks {
+            work_minutes: imp.focus_row.value() as u32,
+            break_minutes: imp.short_break_row.value() as u32,
+            long_break_minutes: imp.long_break_row.value() as u32,
+            long_break_every: LONG_BREAK_EVERY,
+            rounds: imp.rounds_row.value() as u32,
+        })
+    }
+
+    fn seconds(&self) -> u64 {
+        match self.pomodoro() {
+            Some(breaks) => breaks.total_seconds(breaks.rounds),
+            None => u64::from(self.minutes()) * 60,
+        }
     }
 
     fn minutes(&self) -> u32 {
@@ -207,17 +248,28 @@ impl FreezePage {
 
     fn update_freeze_button(&self) {
         let imp = self.imp();
-        imp.custom_group.set_visible(imp.duration_group.active_name().as_deref() == Some("custom"));
-        let minutes = self.minutes();
-        imp.freeze_button.set_sensitive(minutes >= 1 && !self.selected_lists().is_empty());
+        let pomodoro = self.pomodoro();
+        imp.timer_group.set_visible(pomodoro.is_none());
+        imp.custom_group.set_visible(pomodoro.is_none() && imp.duration_group.active_name().as_deref() == Some("custom"));
+        imp.pomodoro_group.set_visible(pomodoro.is_some());
+        if let Some(breaks) = pomodoro {
+            let rounds = breaks.rounds;
+            imp.pomodoro_group.set_description(Some(&format!(
+                "{} {} take {} with breaks",
+                rounds,
+                if rounds == 1 { "round" } else { "rounds" },
+                format::duration(breaks.total_seconds(rounds))
+            )));
+        }
+        imp.freeze_button.set_sensitive(self.seconds() >= 60 && !self.selected_lists().is_empty());
     }
 
     fn start_freeze(&self) {
         let imp = self.imp();
         let lists = self.selected_lists();
-        let seconds = u64::from(self.minutes()) * 60;
+        let seconds = self.seconds();
         let locked = imp.lock_freezes.get();
-        let breaks = BREAKS[imp.breaks_row.selected() as usize];
+        let breaks = self.pomodoro();
         if let Some(win) = self.window() {
             win.spawn(move |client| async move { client.start_freeze(&lists, seconds, locked, breaks).await });
         }
@@ -345,15 +397,22 @@ impl FreezePage {
         imp.countdown_label.set_label(&format::countdown(remaining));
         let phase = imp.freeze.borrow().as_ref().filter(|f| f.breaks.is_some()).map(|f| f.phase(now));
         imp.phase_label.set_visible(phase.is_some());
-        match phase {
-            Some(Phase::OnBreak { until }) => imp
-                .phase_label
-                .set_label(&format!("On a break — blocks are back in {}", format::countdown(until - now))),
-            Some(Phase::Working { until }) if until < end => {
-                imp.phase_label.set_label(&format!("Next break in {}", format::countdown(until - now)))
+        let rounds = imp.freeze.borrow().as_ref().and_then(|f| f.breaks).map_or(0, |b| b.rounds);
+        let of_rounds = |round: u32| if rounds > 0 { format!("Round {round} of {rounds}") } else { format!("Round {round}") };
+        let text = match phase {
+            Some(Phase::OnBreak { until, round, long }) => format!(
+                "{} · {} — back in {}",
+                of_rounds(round),
+                if long { "Long break" } else { "Break" },
+                format::countdown(until - now)
+            ),
+            Some(Phase::Working { until, round }) if until < end => {
+                format!("{} · Focus — break in {}", of_rounds(round), format::countdown(until - now))
             }
-            _ => imp.phase_label.set_label("Last stretch — no more breaks"),
-        }
+            Some(Phase::Working { round, .. }) => format!("{} · Focus — last round", of_rounds(round)),
+            None => String::new(),
+        };
+        imp.phase_label.set_label(&text);
         imp.ring.set_fraction(remaining as f64 / (end - start) as f64);
     }
 }

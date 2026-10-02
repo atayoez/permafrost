@@ -138,18 +138,41 @@ pub fn streak(history: &BTreeMap<String, DayStats>, today: chrono::NaiveDate) ->
     days
 }
 
-/// Pomodoro-style cycles: block for `work_minutes`, then lift for `break_minutes`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Pomodoro cycles: focus for `work_minutes`, then a short break, with a
+/// longer break after every `long_break_every` rounds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Breaks {
     pub work_minutes: u32,
     pub break_minutes: u32,
+    #[serde(default)]
+    pub long_break_minutes: u32,
+    /// 0 for no long breaks.
+    #[serde(default)]
+    pub long_break_every: u32,
+    /// How many focus rounds the freeze has; 0 if it's just a long freeze with breaks.
+    #[serde(default)]
+    pub rounds: u32,
 }
 
-/// Where a freeze with breaks is in its cycle.
+impl Breaks {
+    /// Minutes of break after focus round `round` (counting from 1).
+    pub fn break_after(&self, round: u32) -> u32 {
+        let long = self.long_break_every > 0 && self.long_break_minutes > 0 && round.is_multiple_of(self.long_break_every);
+        if long { self.long_break_minutes } else { self.break_minutes }
+    }
+
+    /// How long `rounds` focus rounds take, with the breaks between them.
+    pub fn total_seconds(&self, rounds: u32) -> u64 {
+        let breaks: u64 = (1..rounds).map(|r| u64::from(self.break_after(r))).sum();
+        (u64::from(self.work_minutes) * u64::from(rounds) + breaks) * 60
+    }
+}
+
+/// Where a freeze with breaks is in its cycle. `round` counts from 1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
-    Working { until: i64 },
-    OnBreak { until: i64 },
+    Working { until: i64, round: u32 },
+    OnBreak { until: i64, round: u32, long: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -165,17 +188,26 @@ pub struct Freeze {
 
 impl Freeze {
     pub fn phase(&self, now: i64) -> Phase {
-        let Some(breaks) = self.breaks else {
-            return Phase::Working { until: self.ends_at };
+        let Some(breaks) = self.breaks.filter(|b| b.work_minutes > 0) else {
+            return Phase::Working { until: self.ends_at, round: 1 };
         };
-        let work = i64::from(breaks.work_minutes) * 60;
-        let cycle = work + i64::from(breaks.break_minutes) * 60;
-        let position = (now - self.started_at).rem_euclid(cycle.max(1));
-        if position < work {
-            Phase::Working { until: (now + work - position).min(self.ends_at) }
-        } else {
-            Phase::OnBreak { until: (now + cycle - position).min(self.ends_at) }
+        let mut start = self.started_at;
+        let mut round = 1;
+        while start < self.ends_at {
+            let work_end = start + i64::from(breaks.work_minutes) * 60;
+            if now < work_end {
+                return Phase::Working { until: work_end.min(self.ends_at), round };
+            }
+            let minutes = breaks.break_after(round);
+            let break_end = work_end + i64::from(minutes) * 60;
+            if now < break_end {
+                let long = minutes != breaks.break_minutes;
+                return Phase::OnBreak { until: break_end.min(self.ends_at), round, long };
+            }
+            start = break_end;
+            round += 1;
         }
+        Phase::Working { until: self.ends_at, round }
     }
 }
 
@@ -317,7 +349,7 @@ impl State {
             // A break lifts the blocks, but the freeze stays locked.
             match freeze.phase(now) {
                 Phase::Working { .. } => status.active_lists.extend(freeze.lists.iter().cloned()),
-                Phase::OnBreak { until } => status.on_break_until = Some(until),
+                Phase::OnBreak { until, .. } => status.on_break_until = Some(until),
             }
             if freeze.locked {
                 lock_until(freeze.ends_at, &freeze.lists, &mut status);
@@ -453,16 +485,28 @@ mod tests {
         let mut state = frozen_state();
         let freeze = state.freeze.as_mut().unwrap();
         freeze.ends_at = 3 * 60 * 60;
-        freeze.breaks = Some(Breaks { work_minutes: 25, break_minutes: 5 });
-        assert_eq!(freeze.phase(60), Phase::Working { until: 25 * 60 });
-        assert_eq!(freeze.phase(26 * 60), Phase::OnBreak { until: 30 * 60 });
-        assert_eq!(freeze.phase(31 * 60), Phase::Working { until: 55 * 60 });
+        freeze.breaks = Some(Breaks { work_minutes: 25, break_minutes: 5, ..Default::default() });
+        assert_eq!(freeze.phase(60), Phase::Working { until: 25 * 60, round: 1 });
+        assert_eq!(freeze.phase(26 * 60), Phase::OnBreak { until: 30 * 60, round: 1, long: false });
+        assert_eq!(freeze.phase(31 * 60), Phase::Working { until: 55 * 60, round: 2 });
 
         let status = state.status(26 * 60);
         assert!(status.active_lists.is_empty());
         assert_eq!(status.on_break_until, Some(30 * 60));
         assert!(status.locked_lists.contains("a"));
         assert!(status.can_stop_freeze().is_err());
+    }
+
+    #[test]
+    fn pomodoro_long_breaks() {
+        let breaks = Breaks { work_minutes: 25, break_minutes: 5, long_break_minutes: 15, long_break_every: 4, rounds: 4 };
+        // Four rounds, with short breaks between them and no break at the end.
+        assert_eq!(breaks.total_seconds(4), (4 * 25 + 3 * 5) * 60);
+        assert_eq!(breaks.total_seconds(8), (8 * 25 + 6 * 5 + 15) * 60);
+        let freeze = Freeze { lists: vec![], started_at: 0, ends_at: breaks.total_seconds(8) as i64, locked: true, breaks: Some(breaks) };
+        let round_four_ends = (4 * 25 + 3 * 5) * 60;
+        assert_eq!(freeze.phase(round_four_ends + 60), Phase::OnBreak { until: round_four_ends + 15 * 60, round: 4, long: true });
+        assert!(matches!(freeze.phase(round_four_ends + 16 * 60), Phase::Working { round: 5, .. }));
     }
 
     fn frozen_state() -> State {

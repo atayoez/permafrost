@@ -224,10 +224,15 @@ impl Daemon {
         if lists.is_empty() {
             return Err(Error::Invalid("Choose at least one block list".into()));
         }
-        if let Some(b) = breaks
-            && !((5..=180).contains(&b.work_minutes) && (1..=60).contains(&b.break_minutes))
-        {
-            return Err(Error::Invalid("Breaks need 5 to 180 minutes of work and 1 to 60 minutes of rest".into()));
+        if let Some(b) = breaks {
+            let valid = (5..=180).contains(&b.work_minutes)
+                && (1..=60).contains(&b.break_minutes)
+                && b.long_break_minutes <= 120
+                && b.long_break_every <= 12
+                && b.rounds <= 24;
+            if !valid {
+                return Err(Error::Invalid("Those Pomodoro settings are out of range".into()));
+            }
         }
         self.state.freeze = Some(Freeze { lists, started_at: now, ends_at: now + seconds as i64, locked, breaks });
         self.today().freezes += 1;

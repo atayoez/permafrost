@@ -219,6 +219,7 @@ impl Window {
                         Ok("schedules") => win.show_section(Section::Schedules),
                         Ok("filters") => win.show_section(Section::Filters),
                         Ok("custom") => win.imp().freeze_page.show_custom_duration(),
+                        Ok("pomodoro") => win.imp().freeze_page.show_pomodoro(),
                         Ok("settings") => win.show_section(Section::Settings),
                         Ok("history") => win.show_section(Section::History),
                         Ok(s) if s.starts_with("preview:") => {
@@ -466,13 +467,13 @@ impl Window {
             return;
         }
         let notification = match phase {
-            Phase::OnBreak { until } => {
-                let n = gio::Notification::new("Break time");
+            Phase::OnBreak { until, long, .. } => {
+                let n = gio::Notification::new(if long { "Long break" } else { "Break time" });
                 n.set_body(Some(&format!("Blocks are lifted until {}.", format::clock(until))));
                 n
             }
-            Phase::Working { .. } => {
-                let n = gio::Notification::new("Back to work");
+            Phase::Working { round, .. } => {
+                let n = gio::Notification::new(&format!("Round {round}: back to focus"));
                 n.set_body(Some("Blocks are back on."));
                 n
             }

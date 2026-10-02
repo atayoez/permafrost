@@ -84,11 +84,14 @@ impl Service {
         lists: Vec<String>,
         seconds: u64,
         locked: bool,
-        work_minutes: u32,
-        break_minutes: u32,
+        breaks: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<()> {
-        let breaks = (work_minutes > 0 && break_minutes > 0).then_some(Breaks { work_minutes, break_minutes });
+        let breaks: Option<Breaks> = if breaks.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_str(breaks).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?)
+        };
         self.change(&emitter, |d| d.start_freeze(lists, seconds, locked, breaks)).await
     }
 

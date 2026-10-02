@@ -44,6 +44,23 @@ template $PermafrostFreezePage: Adw.Bin {
         }
 
         Adw.PreferencesGroup {
+          Adw.ToggleGroup mode_group {
+            active-name: "timer";
+            halign: center;
+
+            Adw.Toggle {
+              name: "timer";
+              label: _("Timer");
+            }
+
+            Adw.Toggle {
+              name: "pomodoro";
+              label: _("Pomodoro");
+            }
+          }
+        }
+
+        Adw.PreferencesGroup timer_group {
           title: _("Duration");
 
           Adw.ToggleGroup duration_group {
@@ -132,18 +149,54 @@ template $PermafrostFreezePage: Adw.Bin {
           }
         }
 
-        Adw.PreferencesGroup {
-          Adw.ComboRow breaks_row {
-            title: _("Breaks");
-            subtitle: _("Blocks lift during breaks, but the freeze keeps going");
+        Adw.PreferencesGroup pomodoro_group {
+          visible: false;
+          title: _("Pomodoro");
 
-            model: StringList {
-              strings [
-                _("None"),
-                _("25 min + 5 min break"),
-                _("50 min + 10 min break"),
-                _("90 min + 15 min break"),
-              ]
+          Adw.SpinRow rounds_row {
+            title: _("Rounds");
+
+            adjustment: Adjustment {
+              lower: 1;
+              upper: 12;
+              step-increment: 1;
+              value: 4;
+            };
+          }
+
+          Adw.SpinRow focus_row {
+            title: _("Focus");
+            subtitle: _("Minutes per round");
+
+            adjustment: Adjustment {
+              lower: 5;
+              upper: 120;
+              step-increment: 5;
+              value: 25;
+            };
+          }
+
+          Adw.SpinRow short_break_row {
+            title: _("Short Break");
+            subtitle: _("Minutes between rounds");
+
+            adjustment: Adjustment {
+              lower: 1;
+              upper: 30;
+              step-increment: 1;
+              value: 5;
+            };
+          }
+
+          Adw.SpinRow long_break_row {
+            title: _("Long Break");
+            subtitle: _("Minutes after every 4th round; 0 for none");
+
+            adjustment: Adjustment {
+              lower: 0;
+              upper: 60;
+              step-increment: 5;
+              value: 15;
             };
           }
         }
