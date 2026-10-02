@@ -50,6 +50,7 @@ fn setup_actions(app: &adw::Application) {
                 .license_type(gtk::License::Gpl30)
                 .copyright("© 2026 Atay Özcan")
                 .build();
+            dialog.add_link("_Donate", "https://paypal.me/atayozc");
             dialog.present(app.active_window().as_ref());
         })
         .build();

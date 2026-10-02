@@ -233,7 +233,7 @@ impl ListPage {
         imp.limit_row.set_subtitle(&if status.limit_reached.contains(&list.id) {
             "Used up for today — blocked until midnight".to_owned()
         } else if list.daily_limit.is_some() {
-            format!("Used {} today. Counts time its apps are open.", format::duration(used))
+            format!("Used {} today on its websites and apps", format::duration(used))
         } else {
             "Block it for the rest of the day once its time is used up".to_owned()
         });

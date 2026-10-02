@@ -11,9 +11,11 @@
       Lock a freeze and it can’t be stopped early, even by restarting your computer.
     </p>
     <ul>
-      <li>Block websites and apps with filters for social media, video, news, shopping, games, gambling, adult content and harmful sites, or make your own</li>
+      <li>Block websites and apps with filters for social media, video, news, shopping, food delivery, games, gambling, adult content and harmful sites, or make your own</li>
       <li>Add community lists with hundreds of thousands of sites</li>
-      <li>Freeze for 25 minutes or a whole day, with optional breaks, or block on a schedule</li>
+      <li>Freeze for 25 minutes or a whole day, or in Pomodoro rounds, or block on a schedule</li>
+      <li>Allow only the websites and apps you need and block everything else</li>
+      <li>Give filters a daily limit, like 30 minutes of YouTube a day</li>
       <li>Locked filters can only get stricter until the timer ends</li>
       <li>Force SafeSearch on Google, Bing, DuckDuckGo and YouTube</li>
       <li>See your focus time and streak in History</li>
@@ -28,8 +30,12 @@
       <caption>Pick how long to freeze and what to block</caption>
     </screenshot>
     <screenshot>
+      <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/pomodoro.png</image>
+      <caption>Pomodoro rounds with short and long breaks</caption>
+    </screenshot>
+    <screenshot>
       <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/frozen.png</image>
-      <caption>A locked freeze counting down, with a break coming up</caption>
+      <caption>A locked freeze counting down</caption>
     </screenshot>
     <screenshot>
       <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/filters.png</image>
@@ -38,6 +44,14 @@
     <screenshot>
       <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/filter.png</image>
       <caption>A filter with its community lists, websites and apps</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/allow.png</image>
+      <caption>Allow only what you need, block everything else</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/limit.png</image>
+      <caption>A daily limit on a filter</caption>
     </screenshot>
     <screenshot>
       <image>https://raw.githubusercontent.com/atayoez/permafrost/main/docs/screenshots/schedules.png</image>
@@ -54,6 +68,7 @@
   </branding>
   <url type="homepage">https://github.com/atayoez/permafrost</url>
   <url type="bugtracker">https://github.com/atayoez/permafrost/issues</url>
+  <url type="donation">https://paypal.me/atayozc</url>
   <launchable type="desktop-id">io.github.atayoez.Permafrost.desktop</launchable>
   <content_rating type="oars-1.1"/>
   <requires>
