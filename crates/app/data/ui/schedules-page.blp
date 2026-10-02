@@ -1,0 +1,16 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PermafrostSchedulesPage: Adw.Bin {
+  child: Adw.PreferencesPage {
+    Adw.PreferencesGroup schedules_group {
+      description: _("Block lists automatically at set times each week");
+
+      Adw.ButtonRow new_schedule_row {
+        title: _("_New Schedule");
+        use-underline: true;
+        start-icon-name: "list-add-symbolic";
+      }
+    }
+  };
+}

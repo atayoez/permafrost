@@ -1,0 +1,19 @@
+[package]
+name = "permafrostd"
+description = "Permafrost system service: enforces block lists and freezes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+permafrost-common.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zbus.workspace = true
+nix = { version = "0.31.3", features = ["signal", "time"] }
+tokio = { version = "1.53.1", features = ["macros", "rt", "signal", "time"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

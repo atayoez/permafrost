@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <defs>
+    <mask id="m">
+      <rect width="16" height="16" fill="#fff"/>
+      <g stroke="#000" stroke-width="1.2" stroke-linecap="round" transform="translate(8 10.75)">
+        <path d="M0 -2.6V2.6"/>
+        <path d="M0 -2.6V2.6" transform="rotate(60)"/>
+        <path d="M0 -2.6V2.6" transform="rotate(120)"/>
+      </g>
+    </mask>
+  </defs>
+  <g fill="#2e3436">
+    <path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2h-1.75V5a1.75 1.75 0 0 0-3.5 0v2z"/>
+    <rect x="2" y="6.5" width="12" height="8.5" rx="2" mask="url(#m)"/>
+  </g>
+</svg>

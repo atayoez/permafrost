@@ -1,0 +1,166 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PermafrostWindow: Adw.ApplicationWindow {
+  title: _("Permafrost");
+  default-width: 1000;
+  default-height: 700;
+  width-request: 360;
+  height-request: 294;
+
+  Adw.Breakpoint {
+    condition ("max-width: 600sp")
+
+    setters {
+      split_view.collapsed: true;
+      sidebar.mode: page;
+    }
+  }
+
+  content: Adw.ToastOverlay toast_overlay {
+    child: Adw.NavigationSplitView split_view {
+      min-sidebar-width: 220;
+      max-sidebar-width: 280;
+
+      sidebar: Adw.NavigationPage {
+        title: _("Permafrost");
+        tag: "sidebar";
+
+        child: Adw.ToolbarView {
+          [top]
+          Adw.HeaderBar {
+            [end]
+            MenuButton {
+              primary: true;
+              icon-name: "open-menu-symbolic";
+              tooltip-text: _("Main Menu");
+              menu-model: primary_menu;
+            }
+          }
+
+          content: Adw.Sidebar sidebar {};
+
+          [bottom]
+          Button {
+            action-name: "win.new-list";
+            margin-start: 6;
+            margin-end: 6;
+            margin-top: 6;
+            margin-bottom: 6;
+
+            child: Adw.ButtonContent {
+              icon-name: "list-add-symbolic";
+              label: _("_New Block List");
+              use-underline: true;
+              halign: start;
+            };
+
+            styles [
+              "flat",
+            ]
+          }
+        };
+      };
+
+      content: Adw.NavigationPage content_page {
+        title: _("Freeze");
+        tag: "content";
+
+        child: Adw.ToolbarView {
+          [top]
+          Adw.HeaderBar {
+            [end]
+            MenuButton list_menu_button {
+              visible: false;
+              icon-name: "view-more-symbolic";
+              tooltip-text: _("Block List Menu");
+              menu-model: list_menu;
+            }
+          }
+
+          [top]
+          Adw.Banner banner {}
+
+          content: Stack stack {
+            transition-type: crossfade;
+
+            StackPage {
+              name: "loading";
+
+              child: Adw.Spinner {
+                width-request: 32;
+                height-request: 32;
+                halign: center;
+                valign: center;
+              };
+            }
+
+            StackPage {
+              name: "offline";
+
+              child: Adw.StatusPage {
+                icon-name: "network-offline-symbolic";
+                title: _("The Permafrost Service Isn’t Running");
+                description: _("Blocking needs the permafrostd system service. Start it with “sudo systemctl enable --now permafrostd”.");
+
+                child: Button {
+                  label: _("_Try Again");
+                  use-underline: true;
+                  halign: center;
+                  action-name: "win.reconnect";
+
+                  styles [
+                    "pill",
+                  ]
+                };
+              };
+            }
+
+            StackPage {
+              name: "freeze";
+              child: $PermafrostFreezePage freeze_page {};
+            }
+
+            StackPage {
+              name: "schedules";
+              child: $PermafrostSchedulesPage schedules_page {};
+            }
+
+            StackPage {
+              name: "list";
+              child: $PermafrostListPage list_page {};
+            }
+          };
+        };
+      };
+    };
+  };
+}
+
+menu primary_menu {
+  section {
+    item {
+      label: _("_Keyboard Shortcuts");
+      action: "app.shortcuts";
+    }
+
+    item {
+      label: _("_About Permafrost");
+      action: "app.about";
+    }
+  }
+}
+
+menu list_menu {
+  section {
+    item {
+      label: _("_Rename…");
+      action: "win.rename-list";
+    }
+
+    item {
+      label: _("_Delete");
+      action: "win.delete-list";
+    }
+  }
+}

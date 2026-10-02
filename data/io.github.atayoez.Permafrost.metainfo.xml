@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.atayoez.Permafrost</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Permafrost</name>
+  <summary>Block distractions until the timer runs out</summary>
+  <description>
+    <p>
+      Permafrost blocks distracting websites and apps for as long as you choose.
+      Lock a freeze and it can’t be stopped early, even by restarting your computer.
+    </p>
+    <ul>
+      <li>Block websites and apps with ready-made lists for social media, video, news, shopping, games and adult content</li>
+      <li>Freeze for 25 minutes or a whole day, or block on a weekly schedule</li>
+      <li>Locked lists can only get stricter until the timer ends</li>
+      <li>Force SafeSearch on Google, Bing, DuckDuckGo and YouTube</li>
+    </ul>
+  </description>
+  <developer id="io.github.atayoez">
+    <name>Atay Özcan</name>
+  </developer>
+  <url type="homepage">https://github.com/atayoez/permafrost</url>
+  <url type="bugtracker">https://github.com/atayoez/permafrost/issues</url>
+  <launchable type="desktop-id">io.github.atayoez.Permafrost.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <releases>
+    <release version="0.1.0" date="2026-10-02">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

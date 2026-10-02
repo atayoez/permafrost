@@ -1,0 +1,45 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PermafrostListPage: Adw.Bin {
+  child: Adw.PreferencesPage {
+    Adw.PreferencesGroup sites_group {
+      title: _("Websites");
+      description: _("Common subdomains like www. and m. are blocked too");
+
+      header-suffix: MenuButton preset_button {
+        label: _("Add _Preset");
+        use-underline: true;
+        valign: center;
+
+        styles [
+          "flat",
+        ]
+      };
+
+      Adw.EntryRow site_entry {
+        title: _("Add website, e.g. reddit.com");
+        show-apply-button: true;
+        input-purpose: url;
+      }
+    }
+
+    Adw.PreferencesGroup apps_group {
+      title: _("Apps");
+      description: _("Closed as soon as they open while this list is active");
+
+      Adw.ButtonRow add_app_row {
+        title: _("_Add App…");
+        use-underline: true;
+        start-icon-name: "list-add-symbolic";
+      }
+    }
+
+    Adw.PreferencesGroup {
+      Adw.SwitchRow safe_search_row {
+        title: _("Force SafeSearch");
+        subtitle: _("Filters explicit results on Google, Bing, DuckDuckGo and YouTube");
+      }
+    }
+  };
+}

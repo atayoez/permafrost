@@ -1,0 +1,26 @@
+[Unit]
+Description=Permafrost blocking service
+Documentation=https://github.com/atayoez/permafrost
+
+[Service]
+Type=dbus
+BusName=io.github.atayoez.Permafrost1
+ExecStart=/usr/libexec/permafrostd
+Restart=always
+RestartSec=2
+StateDirectory=permafrost
+# Needs /etc/hosts and the user cgroups; everything else stays read-only.
+ProtectSystem=full
+ReadWritePaths=/etc/hosts
+ProtectHome=read-only
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

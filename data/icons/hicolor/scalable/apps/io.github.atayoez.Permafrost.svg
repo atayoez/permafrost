@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <!-- metal shackle is curved, so it gets a gradient (per HIG) -->
+    <linearGradient id="metal" x1="48" y1="0" x2="80" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9a9996"/>
+      <stop offset="0.3" stop-color="#ffffff"/>
+      <stop offset="0.6" stop-color="#deddda"/>
+      <stop offset="1" stop-color="#9a9996"/>
+    </linearGradient>
+  </defs>
+  <!-- rounded square tile: chin + front -->
+  <!-- (tops start under the snow cap so they never peek past its edge) -->
+  <path d="M16 32h96v64a16 16 0 0 1-16 16H32a16 16 0 0 1-16-16z" fill="#1a5fb4"/>
+  <path d="M16 30h96v62a16 16 0 0 1-16 16H32a16 16 0 0 1-16-16z" fill="#3584e4"/>
+  <!-- snow cap -->
+  <g fill="#ffffff">
+    <path d="M16 33V32a16 16 0 0 1 16-16h64a16 16 0 0 1 16 16v1z"/>
+    <circle cx="21" cy="32" r="5"/>
+    <circle cx="31" cy="33" r="5.5"/>
+    <circle cx="42" cy="31" r="4"/>
+    <circle cx="52" cy="33" r="5"/>
+    <circle cx="63" cy="32" r="4.5"/>
+    <circle cx="74" cy="33" r="5.5"/>
+    <circle cx="85" cy="31" r="4"/>
+    <circle cx="96" cy="33" r="5.5"/>
+    <circle cx="107" cy="32" r="5"/>
+  </g>
+  <!-- padlock -->
+  <path d="M52 64V54a12 12 0 0 1 24 0v10" fill="none" stroke="url(#metal)" stroke-width="7"/>
+  <rect x="40" y="64" width="48" height="36" rx="8" fill="#c0bfbc"/>
+  <rect x="40" y="61" width="48" height="36" rx="8" fill="#ffffff"/>
+  <!-- snowflake keyhole -->
+  <g stroke="#3584e4" stroke-width="3" stroke-linecap="round" fill="none" transform="translate(64 79)">
+    <g id="arm">
+      <path d="M0 -11V11"/>
+      <path d="M-3.5 -9.5L0 -6L3.5 -9.5M-3.5 9.5L0 6L3.5 9.5"/>
+    </g>
+    <use href="#arm" transform="rotate(60)"/>
+    <use href="#arm" transform="rotate(120)"/>
+  </g>
+</svg>

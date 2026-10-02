@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/io/github/atayoez/Permafrost">
+    <file preprocess="xml-stripblanks">ui/window.ui</file>
+    <file preprocess="xml-stripblanks">ui/freeze-page.ui</file>
+    <file preprocess="xml-stripblanks">ui/list-page.ui</file>
+    <file preprocess="xml-stripblanks">ui/schedules-page.ui</file>
+    <file>style.css</file>
+    <file alias="icons/scalable/apps/io.github.atayoez.Permafrost.svg" preprocess="xml-stripblanks">icons/hicolor/scalable/apps/io.github.atayoez.Permafrost.svg</file>
+    <file alias="icons/symbolic/apps/io.github.atayoez.Permafrost-symbolic.svg" preprocess="xml-stripblanks">icons/hicolor/symbolic/apps/io.github.atayoez.Permafrost-symbolic.svg</file>
+  </gresource>
+</gresources>

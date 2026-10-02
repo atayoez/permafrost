@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Permafrost
+Comment=Block distracting websites and apps until the timer runs out
+Exec=permafrost
+Icon=io.github.atayoez.Permafrost
+Terminal=false
+Type=Application
+Categories=GTK;GNOME;Utility;
+Keywords=focus;block;blocker;distraction;productivity;website;cold turkey;
+StartupNotify=true
+DBusActivatable=false

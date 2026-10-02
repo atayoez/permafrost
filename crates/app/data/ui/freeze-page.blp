@@ -1,0 +1,222 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PermafrostFreezePage: Adw.Bin {
+  child: Stack stack {
+    transition-type: crossfade;
+
+    StackPage {
+      name: "idle";
+
+      child: Adw.PreferencesPage {
+        Adw.PreferencesGroup {
+          Box {
+            orientation: vertical;
+            spacing: 6;
+            margin-bottom: 6;
+
+            Image {
+              icon-name: "io.github.atayoez.Permafrost";
+              pixel-size: 96;
+              margin-bottom: 6;
+            }
+
+            Label {
+              label: _("Freeze Distractions");
+              wrap: true;
+              justify: center;
+
+              styles [
+                "title-1",
+              ]
+            }
+
+            Label {
+              label: _("Pick how long and what to block. It stays frozen even after a restart.");
+              wrap: true;
+              justify: center;
+
+              styles [
+                "dimmed",
+              ]
+            }
+          }
+        }
+
+        Adw.PreferencesGroup {
+          title: _("Duration");
+
+          Adw.ToggleGroup duration_group {
+            active-name: "60";
+
+            Adw.Toggle {
+              name: "25";
+              label: _("25 min");
+            }
+
+            Adw.Toggle {
+              name: "60";
+              label: _("1 h");
+            }
+
+            Adw.Toggle {
+              name: "120";
+              label: _("2 h");
+            }
+
+            Adw.Toggle {
+              name: "240";
+              label: _("4 h");
+            }
+
+            Adw.Toggle {
+              name: "custom";
+              label: _("Custom");
+            }
+          }
+        }
+
+        Adw.PreferencesGroup custom_group {
+          visible: false;
+
+          Adw.SpinRow hours_row {
+            title: _("Hours");
+
+            adjustment: Adjustment {
+              lower: 0;
+              upper: 167;
+              step-increment: 1;
+              value: 1;
+            };
+          }
+
+          Adw.SpinRow minutes_row {
+            title: _("Minutes");
+            wrap: true;
+
+            adjustment: Adjustment {
+              lower: 0;
+              upper: 55;
+              step-increment: 5;
+              value: 30;
+            };
+          }
+        }
+
+        Adw.PreferencesGroup lists_group {
+          title: _("Block");
+        }
+
+        Adw.PreferencesGroup {
+          Adw.SwitchRow lock_row {
+            title: _("Lock Until the Timer Ends");
+            subtitle: _("You won’t be able to unfreeze early");
+            active: true;
+          }
+        }
+
+        Adw.PreferencesGroup {
+          Button freeze_button {
+            halign: center;
+
+            styles [
+              "suggested-action",
+              "pill",
+            ]
+          }
+        }
+      };
+    }
+
+    StackPage {
+      name: "frozen";
+
+      child: Adw.PreferencesPage {
+        Adw.PreferencesGroup {
+          Box {
+            orientation: vertical;
+            spacing: 18;
+
+            Overlay {
+              halign: center;
+
+              child: $PermafrostCountdownRing ring {};
+
+              [overlay]
+              Box {
+                orientation: vertical;
+                halign: center;
+                valign: center;
+
+                Label countdown_label {
+                  styles [
+                    "countdown",
+                  ]
+                }
+
+                Label {
+                  label: _("remaining");
+
+                  styles [
+                    "dimmed",
+                  ]
+                }
+              }
+            }
+
+            Box {
+              orientation: vertical;
+              spacing: 4;
+
+              Label until_label {
+                wrap: true;
+                justify: center;
+
+                styles [
+                  "title-2",
+                ]
+              }
+
+              Label lock_label {
+                wrap: true;
+                justify: center;
+
+                styles [
+                  "dimmed",
+                ]
+              }
+            }
+          }
+        }
+
+        Adw.PreferencesGroup active_group {}
+
+        Adw.PreferencesGroup {
+          Box {
+            halign: center;
+            spacing: 12;
+
+            Button add_time_button {
+              label: _("_Add 15 Minutes");
+              use-underline: true;
+
+              styles [
+                "pill",
+              ]
+            }
+
+            Button stop_button {
+              label: _("_Unfreeze");
+              use-underline: true;
+
+              styles [
+                "destructive-action",
+                "pill",
+              ]
+            }
+          }
+        }
+      };
+    }
+  };
+}
