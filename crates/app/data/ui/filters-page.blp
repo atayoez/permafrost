@@ -3,10 +3,31 @@ using Adw 1;
 
 template $PermafrostFiltersPage: Adw.Bin {
   child: Adw.PreferencesPage page {
-    description: _("Filters are always on, not only during a freeze. While something is frozen they can be turned on, but not off.");
+    Adw.PreferencesGroup lists_group {
+      title: _("Your Filters");
+      description: _("Choose which ones to block on the Freeze page or in a schedule");
+
+      header-suffix: MenuButton preset_button {
+        label: _("Restore _Preset");
+        use-underline: true;
+        valign: center;
+
+        styles [
+          "flat",
+        ]
+      };
+
+      Adw.ButtonRow add_row {
+        title: _("_Add Custom Filter…");
+        use-underline: true;
+        start-icon-name: "list-add-symbolic";
+        action-name: "win.new-list";
+      }
+    }
 
     Adw.PreferencesGroup {
-      title: _("Search");
+      title: _("Always On");
+      description: _("These filters and the lists below block all the time, not only during a freeze. While something is frozen, they can be turned on but not off.");
 
       Adw.SwitchRow safe_search_row {
         title: _("Force SafeSearch");

@@ -57,7 +57,7 @@ fn setup_actions(app: &adw::Application) {
         .activate(|app: &adw::Application, _, _| {
             let section = adw::ShortcutsSection::new(None);
             for (title, accel) in [
-                ("New Block List", "<Control>n"),
+                ("New Custom Filter", "<Control>n"),
                 ("Keyboard Shortcuts", "<Control>question"),
                 ("Close Window", "<Control>w"),
                 ("Quit", "<Control>q"),

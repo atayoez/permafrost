@@ -16,10 +16,6 @@ use crate::list_page::ListPage;
 use crate::schedules_page::SchedulesPage;
 
 const APP_SYMBOLIC: &str = "io.github.atayoez.Permafrost-symbolic";
-const LIST_ICON: &str = "security-high-symbolic";
-
-/// Sidebar position of the first block list, after Freeze, Schedules and Filters.
-const FIRST_LIST_INDEX: u32 = 3;
 const REMIND_BEFORE_SCHEDULE: u32 = 5;
 const HOLD_BEFORE_SCHEDULE: u32 = 10;
 
@@ -42,6 +38,15 @@ fn upcoming_schedules(status: &Status, minutes: u32) -> Vec<(&Schedule, u32)> {
             (s.days[day] && until <= minutes).then_some((s, until))
         })
         .collect()
+}
+
+/// The sidebar row for a section; a list shows under Filters.
+fn index_of(section: &Section) -> u32 {
+    match section {
+        Section::Freeze => 0,
+        Section::Schedules => 1,
+        Section::Filters | Section::List(_) => 2,
+    }
 }
 
 /// What the content pane shows.
@@ -73,7 +78,7 @@ mod imp {
         #[template_child]
         pub banner: TemplateChild<adw::Banner>,
         #[template_child]
-        pub new_list_button: TemplateChild<gtk::MenuButton>,
+        pub back_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
         #[template_child]
@@ -88,10 +93,7 @@ mod imp {
         pub client: RefCell<Option<Client>>,
         pub status: RefCell<Option<Rc<Status>>>,
         pub section: RefCell<Section>,
-        /// (id, name) of the lists the sidebar shows, to know when to rebuild it.
-        pub sidebar_lists: RefCell<Vec<(String, String)>>,
         pub freeze_suffix: RefCell<Option<gtk::Label>>,
-        pub count_labels: RefCell<Vec<gtk::Label>>,
         /// Set while the sidebar is rebuilt, so selection changes aren't navigation.
         pub rebuilding: Cell<bool>,
         pub hold: RefCell<Option<gio::ApplicationHoldGuard>>,
@@ -127,6 +129,7 @@ mod imp {
                 }
             });
             klass.install_action("win.reconnect", None, |win, _, _| win.connect_service());
+            klass.install_action("win.show-filters", None, |win, _, _| win.show_section(Section::Filters));
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -328,7 +331,9 @@ impl Window {
         let imp = self.imp();
         let status = Rc::new(status);
         imp.status.replace(Some(status.clone()));
-        self.update_sidebar(&status);
+        if imp.freeze_suffix.borrow().is_none() {
+            self.build_sidebar();
+        }
 
         imp.freeze_page.set_status(&status);
         imp.schedules_page.set_status(&status);
@@ -341,7 +346,7 @@ impl Window {
                     imp.list_page.set_list(list, &status);
                     imp.content_page.set_title(&list.name);
                 }
-                None => self.show_section(Section::Freeze),
+                None => self.show_section(Section::Filters),
             },
             Section::Freeze => self.update_freeze_title(&status),
             Section::Schedules | Section::Filters => {}
@@ -350,7 +355,7 @@ impl Window {
         match status.locked_until {
             Some(until) => {
                 imp.banner.set_title(&format!(
-                    "Frozen until {} — locked lists can only get stricter",
+                    "Frozen until {} — locked filters can only get stricter",
                     format::clock(until)
                 ));
                 imp.banner.set_revealed(true);
@@ -458,67 +463,24 @@ impl Window {
         }
     }
 
-    fn update_sidebar(&self, status: &Status) {
-        let imp = self.imp();
-        let lists: Vec<(String, String)> = status.state.lists.iter().map(|l| (l.id.clone(), l.name.clone())).collect();
-        if *imp.sidebar_lists.borrow() != lists || imp.freeze_suffix.borrow().is_none() {
-            self.rebuild_sidebar(&lists);
-            self.rebuild_new_list_menu(status);
-        }
-        for (label, list) in imp.count_labels.borrow().iter().zip(&status.state.lists) {
-            label.set_label(&format::thousands(list.sites.len() + list.apps.len()));
-        }
-    }
-
-    fn rebuild_sidebar(&self, lists: &[(String, String)]) {
+    fn build_sidebar(&self) {
         let imp = self.imp();
         imp.rebuilding.set(true);
-        imp.sidebar.remove_all();
-
         let freeze_suffix = gtk::Label::builder().css_classes(["dimmed", "numeric"]).visible(false).build();
-        let top = adw::SidebarSection::new();
-        top.append(adw::SidebarItem::builder().title("Freeze").icon_name(APP_SYMBOLIC).suffix(&freeze_suffix).build());
-        top.append(adw::SidebarItem::builder().title("Schedules").icon_name("alarm-symbolic").build());
-        top.append(
+        let section = adw::SidebarSection::new();
+        section.append(adw::SidebarItem::builder().title("Freeze").icon_name(APP_SYMBOLIC).suffix(&freeze_suffix).build());
+        section.append(adw::SidebarItem::builder().title("Schedules").icon_name("alarm-symbolic").build());
+        section.append(
             adw::SidebarItem::builder()
                 .title("Filters")
                 .icon_name("preferences-system-parental-controls-symbolic")
                 .build(),
         );
-        imp.sidebar.append(top);
-
-        let section = adw::SidebarSection::new();
-        section.set_title(Some("Block Lists"));
-        let mut counts = Vec::new();
-        for (_, name) in lists {
-            let count = gtk::Label::builder().css_classes(["dimmed", "numeric"]).build();
-            section.append(adw::SidebarItem::builder().title(name.as_str()).icon_name(LIST_ICON).suffix(&count).build());
-            counts.push(count);
-        }
         imp.sidebar.append(section);
-
         imp.freeze_suffix.replace(Some(freeze_suffix));
-        imp.count_labels.replace(counts);
-        imp.sidebar_lists.replace(lists.to_vec());
-        let section = imp.section.borrow().clone();
-        imp.sidebar.set_selected(self.index_of(&section).unwrap_or(0));
+        let current = imp.section.borrow().clone();
+        imp.sidebar.set_selected(index_of(&current));
         imp.rebuilding.set(false);
-    }
-
-    /// "Empty List…" plus every preset that isn't a list right now.
-    fn rebuild_new_list_menu(&self, status: &Status) {
-        let menu = gio::Menu::new();
-        menu.append(Some("_Empty List…"), Some("win.new-list"));
-        let from_preset = gio::Menu::new();
-        for preset in presets::PRESETS.iter().filter(|p| status.state.list(p.id).is_none()) {
-            let item = gio::MenuItem::new(Some(preset.name), None);
-            item.set_action_and_target_value(Some("win.add-preset-list"), Some(&preset.id.to_variant()));
-            from_preset.append_item(&item);
-        }
-        if from_preset.n_items() > 0 {
-            menu.append_section(Some("From Preset"), &from_preset);
-        }
-        self.imp().new_list_button.set_menu_model(Some(&menu));
     }
 
     fn add_preset_list(&self, preset: &'static Preset) {
@@ -534,21 +496,6 @@ impl Window {
         });
     }
 
-    fn index_of(&self, section: &Section) -> Option<u32> {
-        match section {
-            Section::Freeze => Some(0),
-            Section::Schedules => Some(1),
-            Section::Filters => Some(2),
-            Section::List(id) => self
-                .imp()
-                .sidebar_lists
-                .borrow()
-                .iter()
-                .position(|(l, _)| l == id)
-                .map(|i| i as u32 + FIRST_LIST_INDEX),
-        }
-    }
-
     fn on_sidebar_selected(&self, index: u32, activated: bool) {
         let imp = self.imp();
         if imp.rebuilding.get() || imp.client.borrow().is_none() {
@@ -557,11 +504,7 @@ impl Window {
         let section = match index {
             0 => Section::Freeze,
             1 => Section::Schedules,
-            2 => Section::Filters,
-            i => match imp.sidebar_lists.borrow().get((i - FIRST_LIST_INDEX) as usize) {
-                Some((id, _)) => Section::List(id.clone()),
-                None => return,
-            },
+            _ => Section::Filters,
         };
         self.show_section(section);
         if activated {
@@ -592,10 +535,11 @@ impl Window {
                 imp.content_page.set_title(&list.name);
             }
         }
-        imp.list_menu_button.set_visible(matches!(section, Section::List(_)));
-        if let Some(index) = self.index_of(&section)
-            && imp.sidebar.selected() != index
-        {
+        let viewing_list = matches!(section, Section::List(_));
+        imp.list_menu_button.set_visible(viewing_list);
+        imp.back_button.set_visible(viewing_list);
+        let index = index_of(&section);
+        if imp.sidebar.selected() != index {
             imp.rebuilding.set(true);
             imp.sidebar.set_selected(index);
             imp.rebuilding.set(false);
@@ -617,7 +561,7 @@ impl Window {
             .activates_default(true)
             .build();
         let dialog = adw::AlertDialog::builder()
-            .heading(if renaming { "Rename Block List" } else { "New Block List" })
+            .heading(if renaming { "Rename Filter" } else { "New Custom Filter" })
             .extra_child(&entry)
             .default_response("save")
             .close_response("cancel")
@@ -677,7 +621,7 @@ impl Window {
                 move |_, _| {
                     let id = list.id.clone();
                     win.spawn(move |client| async move { client.delete_list(&id).await });
-                    win.show_section(Section::Freeze);
+                    win.show_section(Section::Filters);
                 }
             ),
         );

@@ -39,26 +39,6 @@ template $PermafrostWindow: Adw.ApplicationWindow {
           }
 
           content: Adw.Sidebar sidebar {};
-
-          [bottom]
-          MenuButton new_list_button {
-            tooltip-text: _("New Block List");
-            margin-start: 6;
-            margin-end: 6;
-            margin-top: 6;
-            margin-bottom: 6;
-
-            child: Adw.ButtonContent {
-              icon-name: "list-add-symbolic";
-              label: _("_New Block List");
-              use-underline: true;
-              halign: start;
-            };
-
-            styles [
-              "flat",
-            ]
-          }
         };
       };
 
@@ -69,11 +49,19 @@ template $PermafrostWindow: Adw.ApplicationWindow {
         child: Adw.ToolbarView {
           [top]
           Adw.HeaderBar {
+            [start]
+            Button back_button {
+              visible: false;
+              icon-name: "go-previous-symbolic";
+              tooltip-text: _("Back to Filters");
+              action-name: "win.show-filters";
+            }
+
             [end]
             MenuButton list_menu_button {
               visible: false;
               icon-name: "view-more-symbolic";
-              tooltip-text: _("Block List Menu");
+              tooltip-text: _("Filter Menu");
               menu-model: list_menu;
             }
           }

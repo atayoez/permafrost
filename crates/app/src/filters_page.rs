@@ -5,9 +5,10 @@ use adw::subclass::prelude::*;
 use gtk::glib;
 use permafrost_common::community::{self, Category};
 use permafrost_common::model::{Filters, Status};
+use permafrost_common::presets;
 
 use crate::format;
-use crate::window::Window;
+use crate::window::{Section, Window};
 
 mod imp {
     use super::*;
@@ -19,6 +20,14 @@ mod imp {
         pub page: TemplateChild<adw::PreferencesPage>,
         #[template_child]
         pub safe_search_row: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub lists_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub preset_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub add_row: TemplateChild<adw::ButtonRow>,
+
+        pub list_rows: RefCell<Vec<adw::ActionRow>>,
 
         pub source_rows: RefCell<Vec<(&'static str, adw::SwitchRow)>>,
         pub filters: RefCell<Filters>,
@@ -97,6 +106,51 @@ impl FiltersPage {
         imp.source_rows.replace(rows);
     }
 
+    /// Your filters as rows that open the full list; choosing what to block
+    /// happens on the Freeze page.
+    fn update_lists(&self, status: &Status) {
+        let imp = self.imp();
+        for row in imp.list_rows.take() {
+            imp.lists_group.remove(&row);
+        }
+        imp.lists_group.remove(&*imp.add_row);
+        let mut rows = Vec::new();
+        for list in &status.state.lists {
+            let row = adw::ActionRow::builder()
+                .title(&list.name)
+                .subtitle(format::list_summary(list))
+                .activatable(true)
+                .build();
+            if status.locked_lists.contains(&list.id) {
+                row.add_suffix(&gtk::Image::builder().icon_name("system-lock-screen-symbolic").tooltip_text("Frozen").build());
+            }
+            row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+            let id = list.id.clone();
+            row.connect_activated(glib::clone!(
+                #[weak(rename_to = page)]
+                self,
+                move |_| {
+                    if let Some(win) = page.window() {
+                        win.show_section(Section::List(id.clone()));
+                    }
+                }
+            ));
+            imp.lists_group.add(&row);
+            rows.push(row);
+        }
+        imp.lists_group.add(&*imp.add_row);
+        imp.list_rows.replace(rows);
+
+        let menu = gtk::gio::Menu::new();
+        for preset in presets::PRESETS.iter().filter(|p| status.state.list(p.id).is_none()) {
+            let item = gtk::gio::MenuItem::new(Some(preset.name), None);
+            item.set_action_and_target_value(Some("win.add-preset-list"), Some(&preset.id.to_variant()));
+            menu.append_item(&item);
+        }
+        imp.preset_button.set_visible(menu.n_items() > 0);
+        imp.preset_button.set_menu_model(Some(&menu));
+    }
+
     fn window(&self) -> Option<Window> {
         self.root().and_downcast()
     }
@@ -114,6 +168,7 @@ impl FiltersPage {
     }
 
     pub fn set_status(&self, status: &Status) {
+        self.update_lists(status);
         let imp = self.imp();
         let filters = &status.state.filters;
         // While locked, filters can be turned on but not off.
