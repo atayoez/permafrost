@@ -69,13 +69,20 @@ impl Client {
         self.proxy.restore_defaults().await.map_err(message)
     }
 
-    pub async fn start_freeze(&self, lists: &[String], seconds: u64, locked: bool, breaks: Option<Breaks>) -> Result<()> {
+    pub async fn start_freeze(
+        &self,
+        lists: &[String],
+        seconds: u64,
+        locked: bool,
+        breaks: Option<Breaks>,
+        allow_only: bool,
+    ) -> Result<()> {
         let lists: Vec<&str> = lists.iter().map(String::as_str).collect();
         let breaks = match breaks {
             Some(b) => serde_json::to_string(&b).map_err(|e| e.to_string())?,
             None => String::new(),
         };
-        self.proxy.start_freeze(&lists, seconds, locked, &breaks).await.map_err(message)
+        self.proxy.start_freeze(&lists, seconds, locked, &breaks, allow_only).await.map_err(message)
     }
 
     pub async fn add_time(&self, seconds: u64) -> Result<()> {

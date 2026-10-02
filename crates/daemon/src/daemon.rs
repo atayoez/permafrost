@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -13,6 +14,7 @@ use permafrost_common::domain;
 
 use crate::apps::AppEnforcer;
 use crate::browsers;
+use crate::{dns, firewall};
 use crate::community::Community;
 use crate::hosts;
 use crate::safesearch::SafeSearch;
@@ -61,6 +63,11 @@ pub struct Daemon {
     /// Whether browser DNS-over-HTTPS policies are currently in place.
     doh_blocked: Option<bool>,
     last_active: BTreeSet<String>,
+    dns: Arc<dns::Shared>,
+    /// Whether the firewall is sending DNS lookups to the forwarder.
+    intercepting: bool,
+    /// For asking systemd-resolved which servers it uses.
+    resolved: Option<zbus::blocking::Connection>,
     /// Focus time below a second, carried to the next tick.
     focus_carry_ms: u64,
     /// Limited filters' usage below a second, carried to the next tick.
@@ -100,6 +107,9 @@ impl Daemon {
             last_clocks: None,
             history_saved: std::time::Instant::now(),
             focus_carry_ms: 0,
+            dns: Arc::default(),
+            intercepting: false,
+            resolved: None,
             limit_carry_ms: Default::default(),
             options,
         };
@@ -218,7 +228,14 @@ impl Daemon {
         self.commit()
     }
 
-    pub fn start_freeze(&mut self, lists: Vec<String>, seconds: u64, locked: bool, breaks: Option<Breaks>) -> Result<()> {
+    pub fn start_freeze(
+        &mut self,
+        lists: Vec<String>,
+        seconds: u64,
+        locked: bool,
+        breaks: Option<Breaks>,
+        allow_only: bool,
+    ) -> Result<()> {
         let now = now();
         if self.state.freeze.as_ref().is_some_and(|f| f.ends_at > now) {
             return Err(Error::Denied("Already frozen; add time instead".into()));
@@ -240,7 +257,8 @@ impl Daemon {
                 return Err(Error::Invalid("Those Pomodoro settings are out of range".into()));
             }
         }
-        self.state.freeze = Some(Freeze { lists, started_at: now, ends_at: now + seconds as i64, locked, breaks });
+        self.state.freeze =
+            Some(Freeze { lists, started_at: now, ends_at: now + seconds as i64, locked, breaks, allow_only });
         self.today().freezes += 1;
         self.commit()
     }
@@ -318,6 +336,8 @@ impl Daemon {
     /// Called on shutdown. Locked blocks and SafeSearch stay in place
     /// while the service is stopped.
     pub fn shutdown(&mut self) {
+        // DNS must keep working without the service, so interception always ends.
+        self.set_interception(false);
         if self.status().locked_lists.is_empty() && !self.state.settings.safe_search {
             self.write_hosts(String::new());
             self.hosts_key = None;
@@ -342,7 +362,8 @@ impl Daemon {
                 .map(String::as_str)
                 .filter(|host| !sites.contains(*host))
                 .collect();
-            let blocking = !block_is_empty(&sites, &community);
+            // An allowlist or a site limit also relies on browsers using the system's DNS.
+            let blocking = !block_is_empty(&sites, &community) || self.dns_policy_needed(status);
             let block = hosts::render(&sites, &community, redirects);
             if self.write_hosts(block) {
                 self.hosts_key = Some(key);
@@ -352,7 +373,76 @@ impl Daemon {
                 self.doh_blocked = Some(blocking);
             }
         }
-        self.apps.enforce(&apps, self.options.dry_run)
+        self.update_dns(status);
+        let mut closed = self.apps.enforce(&apps, self.options.dry_run);
+        if !status.allow_lists.is_empty() {
+            let allowed: BTreeSet<String> = status
+                .allow_lists
+                .iter()
+                .filter_map(|id| self.state.list(id))
+                .flat_map(|l| l.apps.iter().cloned())
+                .collect();
+            closed.extend(self.apps.enforce_allowlist(&allowed, self.options.dry_run));
+        }
+        closed
+    }
+
+    fn dns_policy_needed(&self, status: &Status) -> bool {
+        !status.allow_lists.is_empty()
+            || self.state.lists.iter().any(|l| {
+                l.daily_limit.is_some() && !l.sites.is_empty() && !status.limit_reached.contains(&l.id)
+            })
+    }
+
+    /// Hands the DNS forwarder its policy and turns interception on or off.
+    fn update_dns(&mut self, status: &Status) {
+        let sites = |ids: &mut dyn Iterator<Item = &String>| -> std::collections::HashSet<String> {
+            ids.filter_map(|id| self.state.list(id)).flat_map(|l| l.sites.iter().cloned()).collect()
+        };
+        let allow = (!status.allow_lists.is_empty()).then(|| sites(&mut status.allow_lists.iter()));
+        let block = sites(&mut status.active_lists.iter());
+        let limited = self
+            .state
+            .lists
+            .iter()
+            .filter(|l| l.daily_limit.is_some() && !status.limit_reached.contains(&l.id))
+            .flat_map(|l| l.sites.iter().map(|s| (s.clone(), l.id.clone())))
+            .collect();
+        let policy = dns::Policy { allow, block, limited };
+        let wanted = policy.needs_interception();
+        {
+            let mut current = self.dns.policy.write().unwrap_or_else(|p| p.into_inner());
+            if *current != policy {
+                *current = policy;
+            }
+        }
+        self.set_interception(wanted);
+    }
+
+    fn set_interception(&mut self, on: bool) {
+        if on && self.resolved.is_none() {
+            self.resolved = zbus::blocking::Connection::system().ok();
+        }
+        let upstreams = if on { dns::system_upstreams(self.resolved.as_ref()) } else { Vec::new() };
+        if on == self.intercepting && (!on || upstreams == *self.dns.upstreams.read().unwrap_or_else(|p| p.into_inner())) {
+            return;
+        }
+        *self.dns.upstreams.write().unwrap_or_else(|p| p.into_inner()) = upstreams.clone();
+        if self.options.dry_run {
+            tracing::info!("would {} DNS interception for {} servers", if on { "start" } else { "stop" }, upstreams.len());
+        } else {
+            let result = if on { firewall::install(&upstreams) } else { firewall::remove() };
+            if let Err(e) = result {
+                tracing::error!("couldn't {} DNS interception: {e}", if on { "start" } else { "stop" });
+                return;
+            }
+            tracing::info!("DNS interception {}", if on { "on" } else { "off" });
+        }
+        self.intercepting = on;
+    }
+
+    pub fn dns(&self) -> Arc<dns::Shared> {
+        self.dns.clone()
     }
 
     /// Returns whether the block is now in place.
@@ -381,10 +471,11 @@ impl Daemon {
         }
         let apps: BTreeSet<String> = limited.iter().flat_map(|l| l.apps.iter().cloned()).collect();
         let running = self.apps.running(&apps);
+        let browsing = self.dns.lists_in_use();
         let millis = elapsed.as_millis().min(5000) as u64;
         let (mut using, mut reached) = (false, false);
         for list in limited {
-            if !list.apps.iter().any(|a| running.contains(a)) {
+            if !list.apps.iter().any(|a| running.contains(a)) && !browsing.contains(&list.id) {
                 continue;
             }
             using = true;
@@ -471,7 +562,7 @@ mod tests {
     fn freeze_writes_hosts_and_locks() {
         let dir = temp_dir("freeze");
         let mut d = daemon(&dir);
-        d.start_freeze(vec!["social".into()], 3600, true, None).unwrap();
+        d.start_freeze(vec!["social".into()], 3600, true, None, false).unwrap();
         let hosts = std::fs::read_to_string(dir.join("hosts")).unwrap();
         assert!(hosts.starts_with("127.0.0.1 localhost\n"));
         assert!(hosts.contains("0.0.0.0 www.reddit.com"));
@@ -494,7 +585,7 @@ mod tests {
     fn unlocked_freeze_can_stop() {
         let dir = temp_dir("unlocked");
         let mut d = daemon(&dir);
-        d.start_freeze(vec!["video".into()], 600, false, None).unwrap();
+        d.start_freeze(vec!["video".into()], 600, false, None, false).unwrap();
         d.stop_freeze().unwrap();
         let hosts = std::fs::read_to_string(dir.join("hosts")).unwrap();
         assert_eq!(hosts, "127.0.0.1 localhost\n");

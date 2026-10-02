@@ -190,6 +190,9 @@ pub struct Freeze {
     pub locked: bool,
     #[serde(default)]
     pub breaks: Option<Breaks>,
+    /// Block everything except these lists' sites and apps.
+    #[serde(default)]
+    pub allow_only: bool,
 }
 
 impl Freeze {
@@ -250,6 +253,9 @@ pub struct Status {
     pub locked_until: Option<i64>,
     /// Schedules running now, which can't be edited if they're locked.
     pub running_schedules: BTreeSet<String>,
+    /// While an allow-only freeze is working: the lists that are still allowed.
+    #[serde(default)]
+    pub allow_lists: BTreeSet<String>,
     /// Lists whose daily limit is used up; they're blocked and locked until midnight.
     #[serde(default)]
     pub limit_reached: BTreeSet<String>,
@@ -357,6 +363,7 @@ impl State {
         if let Some(freeze) = self.freeze.as_ref().filter(|f| f.ends_at > now) {
             // A break lifts the blocks, but the freeze stays locked.
             match freeze.phase(now) {
+                Phase::Working { .. } if freeze.allow_only => status.allow_lists.extend(freeze.lists.iter().cloned()),
                 Phase::Working { .. } => status.active_lists.extend(freeze.lists.iter().cloned()),
                 Phase::OnBreak { until, .. } => status.on_break_until = Some(until),
             }
@@ -405,6 +412,15 @@ impl Status {
         let Some(old) = self.state.list(&new.id) else {
             return Ok(());
         };
+        // An allow list gets stricter by allowing less.
+        if self.state.freeze.as_ref().is_some_and(|f| f.allow_only && f.lists.contains(&new.id)) {
+            let added_site = new.sites.iter().any(|s| !old.sites.contains(s));
+            let added_app = new.apps.iter().any(|a| !old.apps.contains(a));
+            if added_site || added_app {
+                return Err(format!("“{}” is frozen as an allow list: you can remove from it, but not add", old.name));
+            }
+            return Ok(());
+        }
         let removed_site = old.sites.iter().any(|s| !new.sites.contains(s));
         let removed_app = old.apps.iter().any(|a| !new.apps.contains(a));
         let removed_source = old.community.iter().any(|c| !new.community.contains(c));
@@ -532,7 +548,7 @@ mod tests {
         // Four rounds, with short breaks between them and no break at the end.
         assert_eq!(breaks.total_seconds(4), (4 * 25 + 3 * 5) * 60);
         assert_eq!(breaks.total_seconds(8), (8 * 25 + 6 * 5 + 15) * 60);
-        let freeze = Freeze { lists: vec![], started_at: 0, ends_at: breaks.total_seconds(8) as i64, locked: true, breaks: Some(breaks) };
+        let freeze = Freeze { lists: vec![], started_at: 0, ends_at: breaks.total_seconds(8) as i64, locked: true, breaks: Some(breaks), allow_only: false };
         let round_four_ends = (4 * 25 + 3 * 5) * 60;
         assert_eq!(freeze.phase(round_four_ends + 60), Phase::OnBreak { until: round_four_ends + 15 * 60, round: 4, long: true });
         assert!(matches!(freeze.phase(round_four_ends + 16 * 60), Phase::Working { round: 5, .. }));
@@ -560,10 +576,24 @@ mod tests {
         assert!(status.check_list_update(&raised).is_err(), "can't raise a used-up limit");
     }
 
+    #[test]
+    fn allow_lists_only_shrink_while_locked() {
+        let mut state = frozen_state();
+        state.freeze.as_mut().unwrap().allow_only = true;
+        let status = state.status(10);
+        assert!(status.active_lists.is_empty(), "allow lists aren't blocked");
+        assert!(status.allow_lists.contains("a"));
+        let mut list = state.lists[0].clone();
+        list.sites.push("reddit.com".into());
+        assert!(status.check_list_update(&list).is_err());
+        list.sites.clear();
+        assert!(status.check_list_update(&list).is_ok());
+    }
+
     fn frozen_state() -> State {
         State {
             lists: vec![BlockList { id: "a".into(), name: "Social".into(), sites: vec!["x.com".into()], ..Default::default() }],
-            freeze: Some(Freeze { lists: vec!["a".into()], started_at: 0, ends_at: 100, locked: true, breaks: None }),
+            freeze: Some(Freeze { lists: vec!["a".into()], started_at: 0, ends_at: 100, locked: true, breaks: None, allow_only: false }),
             ..Default::default()
         }
     }

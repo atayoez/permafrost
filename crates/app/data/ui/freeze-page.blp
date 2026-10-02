@@ -229,9 +229,25 @@ template $PermafrostFreezePage: Adw.Bin {
           }
         }
 
-        Adw.PreferencesGroup lists_group {
-          title: _("Block");
+        Adw.PreferencesGroup {
+          title: _("Filters");
+
+          Adw.ToggleGroup block_mode_group {
+            active-name: "block";
+
+            Adw.Toggle {
+              name: "block";
+              label: _("Block Selected");
+            }
+
+            Adw.Toggle {
+              name: "allow";
+              label: _("Allow Only Selected");
+            }
+          }
         }
+
+        Adw.PreferencesGroup lists_group {}
       };
     }
 

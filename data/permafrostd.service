@@ -6,6 +6,8 @@ Documentation=https://github.com/atayoez/permafrost
 Type=dbus
 BusName=io.github.atayoez.Permafrost1
 ExecStart=/usr/libexec/permafrostd
+# DNS must keep working even if the service dies while it's filtering lookups.
+ExecStopPost=-/usr/sbin/nft delete table inet permafrost_dns
 Restart=always
 RestartSec=2
 StateDirectory=permafrost

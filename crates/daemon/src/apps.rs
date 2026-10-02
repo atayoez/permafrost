@@ -50,6 +50,7 @@ fn unescape(s: &str) -> String {
 #[derive(Default)]
 pub struct AppEnforcer {
     executables: HashMap<String, Option<String>>,
+    user_apps: HashMap<String, bool>,
 }
 
 impl AppEnforcer {
@@ -113,6 +114,38 @@ impl AppEnforcer {
             }
         }
         running
+    }
+
+    /// Closes every app with a desktop entry that isn't in `allowed`.
+    /// Permafrost itself and background services without one stay.
+    pub fn enforce_allowlist(&mut self, allowed: &BTreeSet<String>, dry_run: bool) -> Vec<String> {
+        let mut closed = BTreeSet::new();
+        for scope in app_scopes(Path::new(CGROUP_ROOT), 0) {
+            let Some(id) = scope.file_name().and_then(|n| n.to_str()).and_then(app_id_from_scope) else {
+                continue;
+            };
+            if allowed.contains(&id) || id == permafrost_common::APP_ID || !self.is_user_app(&id) || !has_processes(&scope) {
+                continue;
+            }
+            tracing::info!("closing {id}: not on the allowlist");
+            if !dry_run && let Err(e) = std::fs::write(scope.join("cgroup.kill"), "1") {
+                tracing::warn!("couldn't close {id}: {e}");
+                continue;
+            }
+            closed.insert(id);
+        }
+        closed.into_iter().collect()
+    }
+
+    /// Whether `app_id` is an app people open, rather than a background helper.
+    fn is_user_app(&mut self, app_id: &str) -> bool {
+        *self.user_apps.entry(app_id.to_owned()).or_insert_with(|| {
+            let file = format!("{app_id}.desktop");
+            application_dirs()
+                .into_iter()
+                .find_map(|dir| std::fs::read_to_string(dir.join(&file)).ok())
+                .is_some_and(|entry| !entry.lines().any(|l| l.trim() == "NoDisplay=true"))
+        })
     }
 
     fn executable(&mut self, app_id: &str) -> Option<String> {

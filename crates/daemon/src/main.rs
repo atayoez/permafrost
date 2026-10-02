@@ -4,6 +4,8 @@ mod apps;
 mod browsers;
 mod community;
 mod daemon;
+mod dns;
+mod firewall;
 mod hosts;
 mod safesearch;
 mod service;
@@ -64,7 +66,17 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = parse_args()?;
+    let dry_run = args.options.dry_run;
     let daemon = Arc::new(Mutex::new(Daemon::load(args.options)?));
+
+    // A previous run that didn't stop cleanly may have left DNS interception on.
+    if !dry_run {
+        let _ = firewall::remove();
+    }
+    let dns = daemon.lock().unwrap_or_else(|p| p.into_inner()).dns();
+    if let Err(e) = dns::serve(dns).await {
+        tracing::error!("couldn't start the DNS filter: {e}; allowlists and site limits won't work");
+    }
 
     let builder =
         if args.session { zbus::connection::Builder::session()? } else { zbus::connection::Builder::system()? };

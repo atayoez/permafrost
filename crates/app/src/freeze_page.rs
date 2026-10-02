@@ -49,6 +49,8 @@ mod imp {
         #[template_child]
         pub mode_group: TemplateChild<adw::ToggleGroup>,
         #[template_child]
+        pub block_mode_group: TemplateChild<adw::ToggleGroup>,
+        #[template_child]
         pub timer_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub pomodoro_group: TemplateChild<adw::PreferencesGroup>,
@@ -149,6 +151,10 @@ impl FreezePage {
             let refresh = refresh.clone();
             move |_| refresh()
         });
+        imp.block_mode_group.connect_active_name_notify({
+            let refresh = refresh.clone();
+            move |_| refresh()
+        });
         for row in [&*imp.rounds_row, &*imp.focus_row, &*imp.short_break_row, &*imp.long_break_row] {
             let refresh = refresh.clone();
             row.connect_value_notify(move |_| refresh());
@@ -204,6 +210,11 @@ impl FreezePage {
         self.imp().mode_group.set_active_name(Some("pomodoro"));
     }
 
+    #[cfg(debug_assertions)]
+    pub fn show_allow_only(&self) {
+        self.imp().block_mode_group.set_active_name(Some("allow"));
+    }
+
     fn preview(&self, id: &str) {
         let Some(win) = self.window() else { return };
         let Some(status) = win.status() else { return };
@@ -225,6 +236,10 @@ impl FreezePage {
             long_break_every: LONG_BREAK_EVERY,
             rounds: imp.rounds_row.value() as u32,
         })
+    }
+
+    fn allow_only(&self) -> bool {
+        self.imp().block_mode_group.active_name().as_deref() == Some("allow")
     }
 
     fn seconds(&self) -> u64 {
@@ -261,6 +276,11 @@ impl FreezePage {
                 format::duration(breaks.total_seconds(rounds))
             )));
         }
+        imp.lists_group.set_description(Some(if self.allow_only() {
+            "Only the selected filters’ websites and apps stay usable; everything else is blocked, including other apps"
+        } else {
+            "Click a filter to see what it blocks"
+        }));
         imp.freeze_button.set_sensitive(self.seconds() >= 60 && !self.selected_lists().is_empty());
     }
 
@@ -270,8 +290,9 @@ impl FreezePage {
         let seconds = self.seconds();
         let locked = imp.lock_freezes.get();
         let breaks = self.pomodoro();
+        let allow_only = self.allow_only();
         if let Some(win) = self.window() {
-            win.spawn(move |client| async move { client.start_freeze(&lists, seconds, locked, breaks).await });
+            win.spawn(move |client| async move { client.start_freeze(&lists, seconds, locked, breaks, allow_only).await });
         }
     }
 
@@ -301,6 +322,7 @@ impl FreezePage {
             "Not locked — you can stop anytime"
         });
         imp.stop_button.set_visible(!freeze.locked);
+        imp.active_group.set_title(if freeze.allow_only { "Only These Are Allowed" } else { "Blocked" });
 
         for row in imp.active_rows.take() {
             imp.active_group.remove(&row);

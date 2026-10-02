@@ -85,6 +85,7 @@ impl Service {
         seconds: u64,
         locked: bool,
         breaks: &str,
+        allow_only: bool,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<()> {
         let breaks: Option<Breaks> = if breaks.is_empty() {
@@ -92,7 +93,7 @@ impl Service {
         } else {
             Some(serde_json::from_str(breaks).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?)
         };
-        self.change(&emitter, |d| d.start_freeze(lists, seconds, locked, breaks)).await
+        self.change(&emitter, |d| d.start_freeze(lists, seconds, locked, breaks, allow_only)).await
     }
 
     async fn add_time(&self, seconds: u64, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> fdo::Result<()> {

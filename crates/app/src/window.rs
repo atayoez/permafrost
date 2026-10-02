@@ -222,6 +222,7 @@ impl Window {
                         Ok("filters") => win.show_section(Section::Filters),
                         Ok("custom") => win.imp().freeze_page.show_custom_duration(),
                         Ok("pomodoro") => win.imp().freeze_page.show_pomodoro(),
+                        Ok("allow") => win.imp().freeze_page.show_allow_only(),
                         Ok("settings") => win.show_section(Section::Settings),
                         Ok("history") => win.show_section(Section::History),
                         Ok(s) if s.starts_with("preview:") => {
