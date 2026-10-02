@@ -120,6 +120,11 @@ template $PermafrostWindow: Adw.ApplicationWindow {
             }
 
             StackPage {
+              name: "settings";
+              child: $PermafrostSettingsPage settings_page {};
+            }
+
+            StackPage {
               name: "list";
               child: $PermafrostListPage list_page {};
             }
@@ -132,11 +137,6 @@ template $PermafrostWindow: Adw.ApplicationWindow {
 
 menu primary_menu {
   section {
-    item {
-      label: _("_Settings");
-      action: "win.preferences";
-    }
-
     item {
       label: _("_Keyboard Shortcuts");
       action: "app.shortcuts";

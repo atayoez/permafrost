@@ -13,6 +13,7 @@ use crate::filters_page::FiltersPage;
 use crate::freeze_page::FreezePage;
 use crate::list_page::ListPage;
 use crate::schedules_page::SchedulesPage;
+use crate::settings_page::SettingsPage;
 
 const APP_SYMBOLIC: &str = "io.github.atayoez.Permafrost-symbolic";
 const REMIND_BEFORE_SCHEDULE: u32 = 5;
@@ -45,6 +46,7 @@ fn index_of(section: &Section) -> u32 {
         Section::Freeze => 0,
         Section::Schedules => 1,
         Section::Filters | Section::List(_) => 2,
+        Section::Settings => 3,
     }
 }
 
@@ -55,6 +57,7 @@ pub enum Section {
     Freeze,
     Schedules,
     Filters,
+    Settings,
     List(String),
 }
 
@@ -88,6 +91,8 @@ mod imp {
         pub filters_page: TemplateChild<FiltersPage>,
         #[template_child]
         pub list_page: TemplateChild<ListPage>,
+        #[template_child]
+        pub settings_page: TemplateChild<SettingsPage>,
 
         pub client: RefCell<Option<Client>>,
         pub status: RefCell<Option<Rc<Status>>>,
@@ -112,6 +117,7 @@ mod imp {
             FreezePage::ensure_type();
             SchedulesPage::ensure_type();
             FiltersPage::ensure_type();
+            SettingsPage::ensure_type();
             ListPage::ensure_type();
             klass.bind_template();
 
@@ -122,11 +128,7 @@ mod imp {
                 }
             });
             klass.install_action("win.delete-list", None, |win, _, _| win.confirm_delete_list());
-            klass.install_action("win.preferences", None, |win, _, _| {
-                if let Some(status) = win.status() {
-                    crate::preferences::present(win, &status);
-                }
-            });
+            klass.install_action("win.preferences", None, |win, _, _| win.show_section(Section::Settings));
             klass.install_action("win.reconnect", None, |win, _, _| win.connect_service());
             klass.install_action("win.show-filters", None, |win, _, _| win.show_section(Section::Filters));
         }
@@ -209,8 +211,13 @@ impl Window {
                         Ok("schedules") => win.show_section(Section::Schedules),
                         Ok("filters") => win.show_section(Section::Filters),
                         Ok("custom") => win.imp().freeze_page.show_custom_duration(),
-                        Ok("settings") => {
-                            let _ = WidgetExt::activate_action(&win, "win.preferences", None);
+                        Ok("settings") => win.show_section(Section::Settings),
+                        Ok(s) if s.starts_with("preview:") => {
+                            if let Some(status) = win.status()
+                                && let Some(list) = status.state.list(&s[8..])
+                            {
+                                crate::preview::present(&win, list, &status);
+                            }
                         }
                         Ok(s) if s.starts_with("list:") => win.show_section(Section::List(s[5..].to_owned())),
                         _ => {}
@@ -341,6 +348,7 @@ impl Window {
         imp.freeze_page.set_status(&status);
         imp.schedules_page.set_status(&status);
         imp.filters_page.set_status(&status);
+        imp.settings_page.set_status(&status);
 
         let section = imp.section.borrow().clone();
         match section {
@@ -352,7 +360,7 @@ impl Window {
                 None => self.show_section(Section::Filters),
             },
             Section::Freeze => self.update_freeze_title(&status),
-            Section::Schedules | Section::Filters => {}
+            Section::Schedules | Section::Filters | Section::Settings => {}
         }
 
         match status.locked_until {
@@ -479,6 +487,7 @@ impl Window {
                 .icon_name("preferences-system-parental-controls-symbolic")
                 .build(),
         );
+        section.append(adw::SidebarItem::builder().title("Settings").icon_name("emblem-system-symbolic").build());
         imp.sidebar.append(section);
         imp.freeze_suffix.replace(Some(freeze_suffix));
         let current = imp.section.borrow().clone();
@@ -494,12 +503,18 @@ impl Window {
         let section = match index {
             0 => Section::Freeze,
             1 => Section::Schedules,
-            _ => Section::Filters,
+            2 => Section::Filters,
+            _ => Section::Settings,
         };
         self.show_section(section);
         if activated {
             imp.split_view.set_show_content(true);
         }
+    }
+
+    /// In a narrow window, moves from the sidebar to the content.
+    pub fn show_content(&self) {
+        self.imp().split_view.set_show_content(true);
     }
 
     pub fn show_section(&self, section: Section) {
@@ -517,6 +532,10 @@ impl Window {
             Section::Filters => {
                 imp.stack.set_visible_child_name("filters");
                 imp.content_page.set_title("Filters");
+            }
+            Section::Settings => {
+                imp.stack.set_visible_child_name("settings");
+                imp.content_page.set_title("Settings");
             }
             Section::List(id) => {
                 let Some(list) = status.state.list(id) else { return };

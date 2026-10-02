@@ -11,6 +11,13 @@ use crate::format;
 use crate::ring::CountdownRing;
 use crate::window::Window;
 
+/// A filter on the Freeze page: a row to preview it and a switch to block it.
+pub struct ListRow {
+    id: String,
+    row: adw::ActionRow,
+    switch: gtk::Switch,
+}
+
 /// Presets checked by default on the Freeze page.
 const DEFAULT_PRESETS: &[&str] = &["social", "video"];
 
@@ -54,7 +61,7 @@ mod imp {
         pub stop_button: TemplateChild<gtk::Button>,
 
         /// One switch per block list, by list id.
-        pub list_rows: RefCell<Vec<(String, adw::SwitchRow)>>,
+        pub list_rows: RefCell<Vec<ListRow>>,
         /// Lists the person turned off, remembered across rebuilds.
         pub unchecked: RefCell<BTreeSet<String>>,
         /// Lists this page has shown before, to pick a default for new ones.
@@ -160,6 +167,14 @@ impl FreezePage {
         self.imp().duration_group.set_active_name(Some("custom"));
     }
 
+    fn preview(&self, id: &str) {
+        let Some(win) = self.window() else { return };
+        let Some(status) = win.status() else { return };
+        if let Some(list) = status.state.list(id) {
+            crate::preview::present(&win, list, &status);
+        }
+    }
+
     fn window(&self) -> Option<Window> {
         self.root().and_downcast()
     }
@@ -173,7 +188,7 @@ impl FreezePage {
     }
 
     fn selected_lists(&self) -> Vec<String> {
-        self.imp().list_rows.borrow().iter().filter(|(_, row)| row.is_active()).map(|(id, _)| id.clone()).collect()
+        self.imp().list_rows.borrow().iter().filter(|r| r.switch.is_active()).map(|r| r.id.clone()).collect()
     }
 
     fn update_freeze_button(&self) {
@@ -242,17 +257,17 @@ impl FreezePage {
         let same = {
             let rows = imp.list_rows.borrow();
             rows.len() == status.state.lists.len()
-                && rows.iter().zip(&status.state.lists).all(|((id, row), list)| *id == list.id && row.title() == list.name)
+                && rows.iter().zip(&status.state.lists).all(|(r, list)| r.id == list.id && r.row.title() == list.name)
         };
         if same {
-            for ((_, row), list) in imp.list_rows.borrow().iter().zip(&status.state.lists) {
-                row.set_subtitle(&format::list_summary(list, status));
+            for (r, list) in imp.list_rows.borrow().iter().zip(&status.state.lists) {
+                r.row.set_subtitle(&format::list_summary(list, status));
             }
             return;
         }
 
-        for (_, row) in imp.list_rows.take() {
-            imp.lists_group.remove(&row);
+        for r in imp.list_rows.take() {
+            imp.lists_group.remove(&r.row);
         }
         let mut rows = Vec::new();
         for list in &status.state.lists {
@@ -263,18 +278,32 @@ impl FreezePage {
             {
                 imp.unchecked.borrow_mut().insert(list.id.clone());
             }
-            let row = adw::SwitchRow::builder()
+            // The switch picks the filter; the rest of the row opens a preview of it.
+            let row = adw::ActionRow::builder()
                 .title(&list.name)
                 .subtitle(format::list_summary(list, status))
-                .active(!imp.unchecked.borrow().contains(&list.id))
+                .activatable(true)
+                .tooltip_text("Show what this filter blocks")
                 .build();
+            let switch = gtk::Switch::builder()
+                .active(!imp.unchecked.borrow().contains(&list.id))
+                .valign(gtk::Align::Center)
+                .build();
+            switch.update_property(&[gtk::accessible::Property::Label(&format!("Block {}", list.name))]);
+            row.add_suffix(&switch);
             let id = list.id.clone();
-            row.connect_active_notify(glib::clone!(
+            row.connect_activated(glib::clone!(
                 #[weak(rename_to = page)]
                 self,
-                move |row| {
+                move |_| page.preview(&id)
+            ));
+            let id = list.id.clone();
+            switch.connect_active_notify(glib::clone!(
+                #[weak(rename_to = page)]
+                self,
+                move |switch| {
                     let mut unchecked = page.imp().unchecked.borrow_mut();
-                    if row.is_active() {
+                    if switch.is_active() {
                         unchecked.remove(&id);
                     } else {
                         unchecked.insert(id.clone());
@@ -284,7 +313,7 @@ impl FreezePage {
                 }
             ));
             imp.lists_group.add(&row);
-            rows.push((list.id.clone(), row));
+            rows.push(ListRow { id: list.id.clone(), row, switch });
         }
         imp.list_rows.replace(rows);
         self.update_freeze_button();
