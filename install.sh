@@ -54,5 +54,6 @@ gtk-update-icon-cache -qtf "$PREFIX/share/icons/hicolor" 2>/dev/null || true
 update-desktop-database -q "$PREFIX/share/applications" 2>/dev/null || true
 systemctl reload dbus.service 2>/dev/null || systemctl reload dbus-broker.service 2>/dev/null || true
 systemctl daemon-reload
-systemctl enable --now permafrostd.service
-echo "Permafrost installed. Open it from your apps, or run: permafrost"
+systemctl enable permafrostd.service
+systemctl restart permafrostd.service
+echo "Permafrost installed. If it was open, quit it (Ctrl+Q) and open it again."
