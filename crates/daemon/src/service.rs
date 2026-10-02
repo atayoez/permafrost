@@ -6,6 +6,8 @@ use zbus::fdo;
 use zbus::interface;
 use zbus::object_server::SignalEmitter;
 
+use permafrost_common::model::Breaks;
+
 use crate::daemon::{Daemon, Error};
 
 pub struct Service {
@@ -82,9 +84,12 @@ impl Service {
         lists: Vec<String>,
         seconds: u64,
         locked: bool,
+        work_minutes: u32,
+        break_minutes: u32,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<()> {
-        self.change(&emitter, |d| d.start_freeze(lists, seconds, locked)).await
+        let breaks = (work_minutes > 0 && break_minutes > 0).then_some(Breaks { work_minutes, break_minutes });
+        self.change(&emitter, |d| d.start_freeze(lists, seconds, locked, breaks)).await
     }
 
     async fn add_time(&self, seconds: u64, #[zbus(signal_emitter)] emitter: SignalEmitter<'_>) -> fdo::Result<()> {

@@ -8,7 +8,7 @@ use std::time::Duration;
 use anyhow::Context;
 use nix::time::{ClockId, clock_gettime};
 use permafrost_common::community;
-use permafrost_common::model::{BlockList, Freeze, Schedule, Settings, State, Status};
+use permafrost_common::model::{BlockList, Breaks, Freeze, Schedule, Settings, State, Status};
 use permafrost_common::domain;
 
 use crate::apps::AppEnforcer;
@@ -206,7 +206,7 @@ impl Daemon {
         self.commit()
     }
 
-    pub fn start_freeze(&mut self, lists: Vec<String>, seconds: u64, locked: bool) -> Result<()> {
+    pub fn start_freeze(&mut self, lists: Vec<String>, seconds: u64, locked: bool, breaks: Option<Breaks>) -> Result<()> {
         let now = now();
         if self.state.freeze.as_ref().is_some_and(|f| f.ends_at > now) {
             return Err(Error::Denied("Already frozen; add time instead".into()));
@@ -218,7 +218,12 @@ impl Daemon {
         if lists.is_empty() {
             return Err(Error::Invalid("Choose at least one block list".into()));
         }
-        self.state.freeze = Some(Freeze { lists, started_at: now, ends_at: now + seconds as i64, locked });
+        if let Some(b) = breaks
+            && !((5..=180).contains(&b.work_minutes) && (1..=60).contains(&b.break_minutes))
+        {
+            return Err(Error::Invalid("Breaks need 5 to 180 minutes of work and 1 to 60 minutes of rest".into()));
+        }
+        self.state.freeze = Some(Freeze { lists, started_at: now, ends_at: now + seconds as i64, locked, breaks });
         self.commit()
     }
 
@@ -253,6 +258,7 @@ impl Daemon {
             {
                 tracing::warn!("system clock moved by {jump}s; keeping the freeze’s remaining time");
                 freeze.ends_at += jump;
+                freeze.started_at += jump;
                 changed = true;
             }
         }
@@ -391,7 +397,7 @@ mod tests {
     fn freeze_writes_hosts_and_locks() {
         let dir = temp_dir("freeze");
         let mut d = daemon(&dir);
-        d.start_freeze(vec!["social".into()], 3600, true).unwrap();
+        d.start_freeze(vec!["social".into()], 3600, true, None).unwrap();
         let hosts = std::fs::read_to_string(dir.join("hosts")).unwrap();
         assert!(hosts.starts_with("127.0.0.1 localhost\n"));
         assert!(hosts.contains("0.0.0.0 www.reddit.com"));
@@ -414,7 +420,7 @@ mod tests {
     fn unlocked_freeze_can_stop() {
         let dir = temp_dir("unlocked");
         let mut d = daemon(&dir);
-        d.start_freeze(vec!["video".into()], 600, false).unwrap();
+        d.start_freeze(vec!["video".into()], 600, false, None).unwrap();
         d.stop_freeze().unwrap();
         let hosts = std::fs::read_to_string(dir.join("hosts")).unwrap();
         assert_eq!(hosts, "127.0.0.1 localhost\n");

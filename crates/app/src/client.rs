@@ -1,7 +1,7 @@
 //! Talking to permafrostd.
 
 use permafrost_common::dbus::PermafrostProxy;
-use permafrost_common::model::{BlockList, Schedule, Settings, Status};
+use permafrost_common::model::{BlockList, Breaks, Schedule, Settings, Status};
 
 pub type Result<T> = std::result::Result<T, String>;
 
@@ -69,9 +69,10 @@ impl Client {
         self.proxy.restore_defaults().await.map_err(message)
     }
 
-    pub async fn start_freeze(&self, lists: &[String], seconds: u64, locked: bool) -> Result<()> {
+    pub async fn start_freeze(&self, lists: &[String], seconds: u64, locked: bool, breaks: Option<Breaks>) -> Result<()> {
         let lists: Vec<&str> = lists.iter().map(String::as_str).collect();
-        self.proxy.start_freeze(&lists, seconds, locked).await.map_err(message)
+        let (work, rest) = breaks.map_or((0, 0), |b| (b.work_minutes, b.break_minutes));
+        self.proxy.start_freeze(&lists, seconds, locked, work, rest).await.map_err(message)
     }
 
     pub async fn add_time(&self, seconds: u64) -> Result<()> {

@@ -106,6 +106,20 @@ impl Schedule {
     }
 }
 
+/// Pomodoro-style cycles: block for `work_minutes`, then lift for `break_minutes`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Breaks {
+    pub work_minutes: u32,
+    pub break_minutes: u32,
+}
+
+/// Where a freeze with breaks is in its cycle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    Working { until: i64 },
+    OnBreak { until: i64 },
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Freeze {
     pub lists: Vec<String>,
@@ -113,6 +127,24 @@ pub struct Freeze {
     pub started_at: i64,
     pub ends_at: i64,
     pub locked: bool,
+    #[serde(default)]
+    pub breaks: Option<Breaks>,
+}
+
+impl Freeze {
+    pub fn phase(&self, now: i64) -> Phase {
+        let Some(breaks) = self.breaks else {
+            return Phase::Working { until: self.ends_at };
+        };
+        let work = i64::from(breaks.work_minutes) * 60;
+        let cycle = work + i64::from(breaks.break_minutes) * 60;
+        let position = (now - self.started_at).rem_euclid(cycle.max(1));
+        if position < work {
+            Phase::Working { until: (now + work - position).min(self.ends_at) }
+        } else {
+            Phase::OnBreak { until: (now + cycle - position).min(self.ends_at) }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -145,6 +177,9 @@ pub struct Status {
     pub locked_until: Option<i64>,
     /// Schedules running now, which can't be edited if they're locked.
     pub running_schedules: BTreeSet<String>,
+    /// While a freeze is on a break: when the break ends.
+    #[serde(default)]
+    pub on_break_until: Option<i64>,
     /// How many sites each downloaded community blocklist has.
     #[serde(default)]
     pub community_sizes: BTreeMap<String, usize>,
@@ -244,7 +279,11 @@ impl State {
         };
 
         if let Some(freeze) = self.freeze.as_ref().filter(|f| f.ends_at > now) {
-            status.active_lists.extend(freeze.lists.iter().cloned());
+            // A break lifts the blocks, but the freeze stays locked.
+            match freeze.phase(now) {
+                Phase::Working { .. } => status.active_lists.extend(freeze.lists.iter().cloned()),
+                Phase::OnBreak { until } => status.on_break_until = Some(until),
+            }
             if freeze.locked {
                 lock_until(freeze.ends_at, &freeze.lists, &mut status);
             }
@@ -360,10 +399,27 @@ mod tests {
         assert_eq!(s.active_until(&at(6, 12, 0)), None, "Tuesday is off");
     }
 
+    #[test]
+    fn breaks_lift_blocks_but_keep_the_lock() {
+        let mut state = frozen_state();
+        let freeze = state.freeze.as_mut().unwrap();
+        freeze.ends_at = 3 * 60 * 60;
+        freeze.breaks = Some(Breaks { work_minutes: 25, break_minutes: 5 });
+        assert_eq!(freeze.phase(60), Phase::Working { until: 25 * 60 });
+        assert_eq!(freeze.phase(26 * 60), Phase::OnBreak { until: 30 * 60 });
+        assert_eq!(freeze.phase(31 * 60), Phase::Working { until: 55 * 60 });
+
+        let status = state.status(26 * 60);
+        assert!(status.active_lists.is_empty());
+        assert_eq!(status.on_break_until, Some(30 * 60));
+        assert!(status.locked_lists.contains("a"));
+        assert!(status.can_stop_freeze().is_err());
+    }
+
     fn frozen_state() -> State {
         State {
             lists: vec![BlockList { id: "a".into(), name: "Social".into(), sites: vec!["x.com".into()], ..Default::default() }],
-            freeze: Some(Freeze { lists: vec!["a".into()], started_at: 0, ends_at: 100, locked: true }),
+            freeze: Some(Freeze { lists: vec!["a".into()], started_at: 0, ends_at: 100, locked: true, breaks: None }),
             ..Default::default()
         }
     }

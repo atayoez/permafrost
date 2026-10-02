@@ -133,6 +133,22 @@ template $PermafrostFreezePage: Adw.Bin {
         }
 
         Adw.PreferencesGroup {
+          Adw.ComboRow breaks_row {
+            title: _("Breaks");
+            subtitle: _("Blocks lift during breaks, but the freeze keeps going");
+
+            model: StringList {
+              strings [
+                _("None"),
+                _("25 min + 5 min break"),
+                _("50 min + 10 min break"),
+                _("90 min + 15 min break"),
+              ]
+            };
+          }
+        }
+
+        Adw.PreferencesGroup {
           Box {
             orientation: vertical;
             spacing: 8;
@@ -221,6 +237,17 @@ template $PermafrostFreezePage: Adw.Bin {
 
                 styles [
                   "dimmed",
+                ]
+              }
+
+              Label phase_label {
+                visible: false;
+                wrap: true;
+                justify: center;
+
+                styles [
+                  "accent",
+                  "heading",
                 ]
               }
             }

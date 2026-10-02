@@ -5,7 +5,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use futures_util::StreamExt;
 use gtk::{gio, glib};
-use permafrost_common::model::{BlockList, Schedule, Status};
+use permafrost_common::model::{BlockList, Phase, Schedule, Status};
 
 use crate::client::Client;
 use crate::format;
@@ -103,6 +103,8 @@ mod imp {
         pub hold: RefCell<Option<gio::ApplicationHoldGuard>>,
         pub background_requested: Cell<bool>,
         pub background_message: RefCell<String>,
+        /// Whether the freeze was on a break at the last tick, to announce changes.
+        pub on_break: Cell<Option<bool>>,
         /// Schedule runs already announced, as `<id>-<date>-<start>`.
         pub reminded: RefCell<std::collections::HashSet<String>>,
     }
@@ -443,6 +445,34 @@ impl Window {
         }
     }
 
+    /// "Break time" and "Back to work" notifications for freezes with breaks.
+    fn announce_breaks(&self, status: &Status, now: i64) {
+        let imp = self.imp();
+        let phase = status.state.freeze.as_ref().filter(|f| f.breaks.is_some() && f.ends_at > now).map(|f| f.phase(now));
+        let on_break = phase.map(|p| matches!(p, Phase::OnBreak { .. }));
+        let was = imp.on_break.replace(on_break);
+        let (Some(app), Some(was), Some(on_break), Some(phase)) = (self.application(), was, on_break, phase) else {
+            return;
+        };
+        if was == on_break {
+            return;
+        }
+        let notification = match phase {
+            Phase::OnBreak { until } => {
+                let n = gio::Notification::new("Break time");
+                n.set_body(Some(&format!("Blocks are lifted until {}.", format::clock(until))));
+                n
+            }
+            Phase::Working { .. } => {
+                let n = gio::Notification::new("Back to work");
+                n.set_body(Some("Blocks are back on."));
+                n
+            }
+        };
+        notification.set_icon(&gio::ThemedIcon::new(APP_SYMBOLIC));
+        app.send_notification(Some("freeze-break"), &notification);
+    }
+
     fn notify_app_blocked(&self, app_id: &str, until: i64) {
         let Some(app) = self.application() else { return };
         let name = gio_unix::DesktopAppInfo::new(&format!("{app_id}.desktop"))
@@ -461,6 +491,7 @@ impl Window {
         let imp = self.imp();
         imp.freeze_page.tick(now);
         self.remind_schedules(&status);
+        self.announce_breaks(&status, now);
         if status.active_lists.is_empty() {
             self.set_hold(!upcoming_schedules(&status, HOLD_BEFORE_SCHEDULE).is_empty());
         }

@@ -4,12 +4,20 @@ use std::collections::BTreeSet;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::glib;
-use permafrost_common::model::Status;
+use permafrost_common::model::{Breaks, Freeze, Phase, Status};
 use permafrost_common::presets;
 
 use crate::format;
 use crate::ring::CountdownRing;
 use crate::window::Window;
+
+/// The choices in the Breaks row, in order.
+const BREAKS: [Option<Breaks>; 4] = [
+    None,
+    Some(Breaks { work_minutes: 25, break_minutes: 5 }),
+    Some(Breaks { work_minutes: 50, break_minutes: 10 }),
+    Some(Breaks { work_minutes: 90, break_minutes: 15 }),
+];
 
 /// A filter on the Freeze page: a row to preview it and a switch to block it.
 pub struct ListRow {
@@ -43,6 +51,12 @@ mod imp {
         pub freeze_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub lock_hint: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub breaks_row: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub phase_label: TemplateChild<gtk::Label>,
+        /// The current freeze, for showing its break phase every second.
+        pub freeze: RefCell<Option<Freeze>>,
         /// The lock setting new freezes use, from Settings.
         pub lock_freezes: Cell<bool>,
         #[template_child]
@@ -203,8 +217,9 @@ impl FreezePage {
         let lists = self.selected_lists();
         let seconds = u64::from(self.minutes()) * 60;
         let locked = imp.lock_freezes.get();
+        let breaks = BREAKS[imp.breaks_row.selected() as usize];
         if let Some(win) = self.window() {
-            win.spawn(move |client| async move { client.start_freeze(&lists, seconds, locked).await });
+            win.spawn(move |client| async move { client.start_freeze(&lists, seconds, locked, breaks).await });
         }
     }
 
@@ -220,6 +235,7 @@ impl FreezePage {
         self.rebuild_list_rows(status);
 
         let freeze = status.state.freeze.as_ref().filter(|f| f.ends_at > status.now);
+        imp.freeze.replace(freeze.cloned());
         let Some(freeze) = freeze else {
             imp.stack.set_visible_child_name("idle");
             return;
@@ -327,6 +343,17 @@ impl FreezePage {
         }
         let remaining = (end - now).max(0);
         imp.countdown_label.set_label(&format::countdown(remaining));
+        let phase = imp.freeze.borrow().as_ref().filter(|f| f.breaks.is_some()).map(|f| f.phase(now));
+        imp.phase_label.set_visible(phase.is_some());
+        match phase {
+            Some(Phase::OnBreak { until }) => imp
+                .phase_label
+                .set_label(&format!("On a break — blocks are back in {}", format::countdown(until - now))),
+            Some(Phase::Working { until }) if until < end => {
+                imp.phase_label.set_label(&format!("Next break in {}", format::countdown(until - now)))
+            }
+            _ => imp.phase_label.set_label("Last stretch — no more breaks"),
+        }
         imp.ring.set_fraction(remaining as f64 / (end - start) as f64);
     }
 }
